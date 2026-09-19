@@ -99,6 +99,7 @@ def test_windows_spawn_validates_execute_task_and_emits_structured_failure(
                 "execute_schema_version": EXECUTE_TASK_PAYLOAD_VERSION,
                 "descriptor_version": 1,
                 "descriptor": {"frame_id": 1},
+                "inputs": [],
                 "scratch_path": str(tmp_path / "worker-task"),
             },
         )
