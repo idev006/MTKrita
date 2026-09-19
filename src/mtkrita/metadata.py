@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import hypot, sqrt
 
 import cv2
 import numpy as np
@@ -11,6 +12,8 @@ from PIL import Image
 class MetadataZone:
     x_fraction: float = 0.25
     y_fraction: float = 0.25
+    anchor_x_fraction: float = 0.60
+    anchor_y_fraction: float = 0.60
 
 
 @dataclass(frozen=True)
@@ -19,11 +22,43 @@ class MetadataDetection:
     confidence: float
     mask: Image.Image | None
     reason: str
+    candidate_count: int = 0
+    anchored_candidate_count: int = 0
+    area_ratio: float | None = None
+    fill_ratio: float | None = None
+    compactness: float | None = None
+    anchor_distance: float | None = None
+    dominance_margin: float | None = None
+
+
+@dataclass(frozen=True)
+class _MetadataCandidate:
+    confidence: float
+    label: int
+    bbox: tuple[int, int, int, int]
+    area_ratio: float
+    fill_ratio: float
+    compactness: float
+    anchor_distance: float
+    anchored: bool
 
 
 def _validate_zone(zone: MetadataZone) -> None:
     if not 0 < zone.x_fraction <= 0.5 or not 0 < zone.y_fraction <= 0.5:
         raise ValueError("metadata zone fractions must be in (0, 0.5]")
+    if not 0 < zone.anchor_x_fraction <= 1 or not 0 < zone.anchor_y_fraction <= 1:
+        raise ValueError("metadata anchor fractions must be in (0, 1]")
+
+
+def _background_rgb(rgba: np.ndarray) -> np.ndarray:
+    rgb = rgba[:, :, :3].astype(np.int16)
+    alpha = rgba[:, :, 3]
+    edge_rgb = np.concatenate((rgb[-1, :, :], rgb[:, -1, :]), axis=0)
+    edge_alpha = np.concatenate((alpha[-1, :], alpha[:, -1]), axis=0)
+    visible = edge_rgb[edge_alpha > 8]
+    if visible.size == 0:
+        return np.zeros(3, dtype=np.int16)
+    return np.median(visible, axis=0)
 
 
 def detect_corner_metadata(
@@ -33,34 +68,44 @@ def detect_corner_metadata(
     color_tolerance: int = 24,
     min_area_ratio: float = 0.002,
     max_area_ratio: float = 0.50,
+    min_fill_ratio: float = 0.20,
+    min_compactness: float = 0.35,
+    dominance_margin: float = 0.12,
 ) -> MetadataDetection:
-    """Detect a compact top-left metadata component conservatively."""
+    """Detect a compact, corner-anchored metadata component conservatively."""
     resolved_zone = zone or MetadataZone()
     _validate_zone(resolved_zone)
     if not 0 <= color_tolerance <= 255:
         raise ValueError("color_tolerance must be between 0 and 255")
+    if not 0 <= min_fill_ratio <= 1:
+        raise ValueError("min_fill_ratio must be between 0 and 1")
+    if not 0 <= min_compactness <= 1:
+        raise ValueError("min_compactness must be between 0 and 1")
+    if not 0 <= dominance_margin <= 1:
+        raise ValueError("dominance_margin must be between 0 and 1")
 
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
     height, width = rgba.shape[:2]
     zone_width = max(1, round(width * resolved_zone.x_fraction))
     zone_height = max(1, round(height * resolved_zone.y_fraction))
+    anchor_width = max(1.0, zone_width * resolved_zone.anchor_x_fraction)
+    anchor_height = max(1.0, zone_height * resolved_zone.anchor_y_fraction)
 
     rgb = rgba[:, :, :3].astype(np.int16)
     alpha = rgba[:, :, 3]
-    sample = np.concatenate((rgb[-1, :, :], rgb[:, -1, :]), axis=0)
-    background = np.median(sample, axis=0)
+    background = _background_rgb(rgba)
 
     zone_rgb = rgb[:zone_height, :zone_width, :]
     zone_alpha = alpha[:zone_height, :zone_width]
     distance = np.max(np.abs(zone_rgb - background), axis=2)
-    candidate = ((distance > color_tolerance) & (zone_alpha > 8)).astype(np.uint8) * 255
+    candidate_mask = ((distance > color_tolerance) & (zone_alpha > 8)).astype(np.uint8) * 255
 
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(candidate, connectivity=8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(candidate_mask, connectivity=8)
     if count <= 1:
         return MetadataDetection(None, 0.0, None, "no compact metadata component found")
 
     zone_area = zone_width * zone_height
-    candidates: list[tuple[float, int, tuple[int, int, int, int]]] = []
+    candidates: list[_MetadataCandidate] = []
     for label in range(1, count):
         x, y, w, h, area = (int(v) for v in stats[label])
         area_ratio = area / zone_area
@@ -70,27 +115,85 @@ def detect_corner_metadata(
             continue
 
         fill_ratio = area / (w * h)
-        proximity = 1.0 - min(1.0, (x + y) / max(1, zone_width + zone_height))
+        compactness = min(w, h) / max(w, h)
+        center_x = x + (w / 2)
+        center_y = y + (h / 2)
+        anchored = center_x <= anchor_width and center_y <= anchor_height
+        anchor_distance = hypot(center_x / zone_width, center_y / zone_height) / sqrt(2)
+        proximity = 1.0 - min(1.0, anchor_distance)
         containment = 1.0 if (x + w <= zone_width and y + h <= zone_height) else 0.65
-        confidence = (0.45 * fill_ratio) + (0.35 * proximity) + (0.20 * containment)
-        candidates.append((confidence, label, (x, y, x + w, y + h)))
+        confidence = (
+            (0.30 * fill_ratio)
+            + (0.30 * proximity)
+            + (0.20 * compactness)
+            + (0.20 * containment)
+        )
+        candidates.append(
+            _MetadataCandidate(
+                confidence=float(confidence),
+                label=label,
+                bbox=(x, y, x + w, y + h),
+                area_ratio=float(area_ratio),
+                fill_ratio=float(fill_ratio),
+                compactness=float(compactness),
+                anchor_distance=float(anchor_distance),
+                anchored=anchored,
+            )
+        )
 
     if not candidates:
         return MetadataDetection(None, 0.0, None, "no candidate passed metadata constraints")
 
-    candidates.sort(reverse=True, key=lambda item: item[0])
-    best_confidence, best_label, bbox = candidates[0]
-    if len(candidates) > 1 and candidates[1][0] >= best_confidence - 0.10:
-        return MetadataDetection(None, best_confidence, None, "multiple ambiguous metadata candidates")
+    plausible = [
+        candidate
+        for candidate in candidates
+        if candidate.anchored
+        and candidate.fill_ratio >= min_fill_ratio
+        and candidate.compactness >= min_compactness
+    ]
+    if not plausible:
+        return MetadataDetection(
+            None,
+            max(candidate.confidence for candidate in candidates),
+            None,
+            "no anchored metadata candidate passed shape constraints",
+            candidate_count=len(candidates),
+            anchored_candidate_count=0,
+        )
+
+    plausible.sort(reverse=True, key=lambda item: item.confidence)
+    best = plausible[0]
+    margin = 1.0 if len(plausible) == 1 else best.confidence - plausible[1].confidence
+    if len(plausible) > 1 and margin < dominance_margin:
+        return MetadataDetection(
+            None,
+            best.confidence,
+            None,
+            "multiple ambiguous anchored metadata candidates",
+            candidate_count=len(candidates),
+            anchored_candidate_count=len(plausible),
+            area_ratio=best.area_ratio,
+            fill_ratio=best.fill_ratio,
+            compactness=best.compactness,
+            anchor_distance=best.anchor_distance,
+            dominance_margin=float(margin),
+        )
 
     full_mask = np.zeros((height, width), dtype=np.uint8)
-    local = (labels == best_label).astype(np.uint8) * 255
+    local = (labels == best.label).astype(np.uint8) * 255
     full_mask[:zone_height, :zone_width] = local
     return MetadataDetection(
-        bbox=bbox,
-        confidence=float(best_confidence),
+        bbox=best.bbox,
+        confidence=best.confidence,
         mask=Image.fromarray(full_mask),
-        reason="single compact top-left metadata candidate",
+        reason="single dominant anchored top-left metadata candidate",
+        candidate_count=len(candidates),
+        anchored_candidate_count=len(plausible),
+        area_ratio=best.area_ratio,
+        fill_ratio=best.fill_ratio,
+        compactness=best.compactness,
+        anchor_distance=best.anchor_distance,
+        dominance_margin=float(margin),
     )
 
 

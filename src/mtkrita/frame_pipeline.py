@@ -4,11 +4,11 @@ from dataclasses import dataclass
 
 from PIL import Image
 
-from .border import detect_border, remove_border
+from .border import BorderDetection, detect_border, remove_border
 from .content import analyze_alpha_content
 from .fit import fit_rgba_to_canvas
 from .line_profile import validate_static_sticker
-from .metadata import detect_corner_metadata, remove_detected_metadata
+from .metadata import MetadataDetection, detect_corner_metadata, remove_detected_metadata
 from .models import Finding, FrameResult, FrameStatus, ProcessingMode
 from .routing import BackgroundRoute, TransparencyDecision, decide_source_background_route
 
@@ -44,6 +44,42 @@ def _route_evidence(decision: TransparencyDecision) -> dict[str, object]:
         "alpha_max": decision.alpha_max,
         "transparent_pixel_ratio": decision.transparent_pixel_ratio,
         "route_reason": decision.reason,
+    }
+
+
+def _border_evidence(detection: BorderDetection) -> dict[str, object]:
+    sides: dict[str, object] = {}
+    for name in ("left", "top", "right", "bottom"):
+        side = getattr(detection, name)
+        if side is None:
+            continue
+        sides[name] = {
+            "offset": side.offset,
+            "thickness": side.thickness,
+            "color": side.color,
+            "confidence": side.confidence,
+            "contact_risk": side.contact_risk,
+        }
+    return {
+        "border_detected": detection.detected,
+        "border_confidence": detection.confidence,
+        "border_contact_risk": detection.contact_risk,
+        "border_sides": sides,
+    }
+
+
+def _metadata_evidence(detection: MetadataDetection) -> dict[str, object]:
+    return {
+        "metadata_confidence": detection.confidence,
+        "metadata_reason": detection.reason,
+        "metadata_bbox": detection.bbox,
+        "metadata_candidate_count": detection.candidate_count,
+        "metadata_anchored_candidate_count": detection.anchored_candidate_count,
+        "metadata_area_ratio": detection.area_ratio,
+        "metadata_fill_ratio": detection.fill_ratio,
+        "metadata_compactness": detection.compactness,
+        "metadata_anchor_distance": detection.anchor_distance,
+        "metadata_dominance_margin": detection.dominance_margin,
     }
 
 
@@ -106,15 +142,13 @@ def process_frame(
 
     if cfg.remove_border:
         border = detect_border(working)
-        evidence["border_detected"] = border.detected
-        evidence["border_confidence"] = border.confidence
-        evidence["border_contact_risk"] = border.contact_risk
+        evidence.update(_border_evidence(border))
         if border.detected:
             if border.contact_risk:
                 findings.append(
                     _finding(
                         "BORDER.CONTACT_RISK",
-                        "Border may be connected to same-color artwork; automatic crop refused",
+                        "Border may be connected to artwork or metadata; automatic crop refused",
                     )
                 )
                 return _early_review(
@@ -158,9 +192,7 @@ def process_frame(
 
     if cfg.remove_metadata:
         metadata = detect_corner_metadata(working)
-        evidence["metadata_confidence"] = metadata.confidence
-        evidence["metadata_reason"] = metadata.reason
-        evidence["metadata_bbox"] = metadata.bbox
+        evidence.update(_metadata_evidence(metadata))
         if metadata.mask is not None and metadata.bbox is not None:
             if metadata.confidence < cfg.metadata_auto_threshold:
                 findings.append(
@@ -179,8 +211,9 @@ def process_frame(
             findings.append(
                 _finding(
                     "METADATA.AMBIGUOUS",
-                    "Multiple metadata candidates require review",
+                    "Multiple anchored metadata candidates require review",
                     confidence=metadata.confidence,
+                    dominance_margin=metadata.dominance_margin,
                 )
             )
 
