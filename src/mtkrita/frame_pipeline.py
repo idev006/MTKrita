@@ -91,6 +91,8 @@ def _metadata_evidence(detection: MetadataDetection) -> dict[str, object]:
         "metadata_compactness": detection.compactness,
         "metadata_anchor_distance": detection.anchor_distance,
         "metadata_dominance_margin": detection.dominance_margin,
+        "metadata_segmentation_basis": detection.segmentation_basis,
+        "metadata_alpha_visibility_threshold": detection.alpha_visibility_threshold,
         "metadata_analysis_exclusion_applied": detection.analysis_exclusion_applied,
         "metadata_analysis_excluded_pixel_count": detection.analysis_excluded_pixel_count,
         "metadata_analysis_excluded_candidate_pixel_count": (
