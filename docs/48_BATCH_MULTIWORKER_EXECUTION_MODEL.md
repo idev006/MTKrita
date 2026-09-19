@@ -1,7 +1,7 @@
 # MTKrita Batch and Multi-Worker Execution Model
 
 ## Status
-SSOT — Execution Architecture Baseline v1.0
+SSOT — Execution Architecture Baseline v1.1
 
 ## Purpose
 กำหนดวิธีประมวลผลแบบ batch และ parallel multi-worker ให้มี throughput สูงโดยไม่แลกกับความถูกต้อง ความสามารถในการ recover หรือความปลอดภัยของ shared resources
@@ -191,10 +191,26 @@ Worker 10 may finish before worker 1; export remains `01.png ... 10.png`.
 
 Scheduler requirements:
 - bounded inflight tasks
+- bounded queued tasks
 - per-job fairness when multiple jobs exist
 - priority support
 - resource-aware admission
 - avoid starvation of REVIEW/retry work
+
+### 14.1 Scheduler Foundation Contract
+The MVP scheduler is an admission/dispatch policy component, not the durable authority.
+
+Required behavior:
+- queue capacity and inflight capacity are explicit hard bounds;
+- duplicate task identity is rejected;
+- tasks at the same priority are dispatched round-robin across jobs;
+- a job-dispatchability callback gates PAUSED/STOPPING/otherwise blocked jobs without embedding lifecycle rules inside the scheduler;
+- blocked tasks remain queued and are not silently dropped;
+- priority is supported, but a configurable priority burst limit must allow lower-priority ready work to make progress;
+- task completion releases an inflight slot;
+- durable task assignment, attempt identity, leases and final state remain owned by JobStore/MainBoard services.
+
+The scheduler may be replaced later without changing JobStore, worker-result validation or artifact-commit contracts.
 
 ## 15. Worker Failure Policy
 
