@@ -1,7 +1,7 @@
 # MTKrita Master Project Control
 
 ## Status
-SSOT — Project Control Baseline v1.3
+SSOT — Project Control Baseline v1.4
 
 ## Purpose
 เอกสารควบคุมระดับบนสุดของโครงการ MTKrita เชื่อม Vision → Goals → Objectives → Mandatory Workflow → Workstreams → Milestones → Quality Gates → Release Criteria และป้องกัน scope drift
@@ -27,6 +27,8 @@ MTKrita เป็น **Document-Driven Project with SSOT** และใช้ **
 - **G-06 Engine Independence** — ใช้ proven/open-source providers หลัง stable interfaces โดยไม่ผูก domain workflow กับ engine เดียว
 - **G-07 Auditable Behavior** — workflow, use cases, UML, state, sequence, recovery และ stage contracts ต้องอยู่ใน SSOT
 - **G-08 Developer Handoff Readiness** — ทีมพัฒนาต้องสามารถเริ่มงานจาก SSOT ได้โดยไม่ต้อง reconstruct intent จากบทสนทนา
+- **G-09 Interface-First Extensibility** — orchestrator/domain layer ต้องพึ่ง provider contracts ไม่พึ่ง concrete engine implementations
+- **G-10 Configuration Consistency** — TOML เป็น canonical human-maintained configuration format และ effective config ต้อง validate/hash ได้
 
 ## 3. Mandatory Minimum Objectives
 MVP ต้องพิสูจน์ได้ว่า:
@@ -40,6 +42,8 @@ MVP ต้องพิสูจน์ได้ว่า:
 8. final PNG trace กลับ source sheet/frame ได้
 9. critical implementation trace กลับ requirement/design/test ได้
 10. job/frame lifecycle และ recovery behavior ต้องเป็นไปตาม state/recovery SSOT
+11. replaceable processing capabilities ต้องอยู่หลัง stable interfaces/provider contracts
+12. configuration ที่มีผลต่อ behavior ต้องถูก load/validate จาก TOML และบันทึก effective config hash
 
 ## 4. Mandatory End-to-End Workflow
 ```text
@@ -72,7 +76,18 @@ Manifest / Evidence / Package
 
 Authoritative workflow detail: `27_END_TO_END_WORKFLOW_SPEC.md`.
 
-## 5. Scope Boundaries
+## 5. Architecture Control Rules
+- Python owns orchestration, routing, state, QA policy and evidence.
+- Replaceable image-processing capabilities are accessed through MTKrita-owned interfaces.
+- Concrete providers are composed at the system edge through a registry/factory.
+- Provider-specific objects must not leak into stable domain contracts without wrappers.
+- TOML is the canonical human-maintained configuration format.
+- Python 3.11+ uses `tomllib` for TOML read operations.
+- JSON remains acceptable for machine-generated manifests/evidence.
+
+References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md`, `45_TOML_CONFIGURATION_SPEC.md`, ADR-015 and ADR-016.
+
+## 6. Scope Boundaries
 ### Must-have before MVP release
 - MF-001 Split PNG frames
 - MF-002 Border removal
@@ -90,7 +105,7 @@ Authoritative workflow detail: `27_END_TO_END_WORKFLOW_SPEC.md`.
 
 Optional features may not delay mandatory MVP correctness.
 
-## 6. Workstreams
+## 7. Workstreams
 - **WS1 Product/Governance** — Project Director + PM
 - **WS2 Core Architecture** — Senior Software Engineer
 - **WS3 Image Processing** — Senior Process Engineer + Pipeline Engineer
@@ -101,7 +116,7 @@ Optional features may not delay mandatory MVP correctness.
 
 Role competency/authority SSOT: `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`.
 
-## 7. Milestones
+## 8. Milestones
 - **M0 Documentation Baseline — COMPLETE** — governance, requirements, architecture, behavioral models, QA/testing/traceability and developer handoff baseline approved
 - **M1 Core Skeleton — COMPLETE** — CLI, manifests, immutable inspection, test harness, Windows CI
 - **M2 Transparent Processing Baseline — IN PROGRESS** — split + border + metadata + transparency routing + content/smart-fit + PNG validation
@@ -111,7 +126,7 @@ Role competency/authority SSOT: `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`.
 - **M6 v1.0 Release Candidate** — regression/golden corpus, Windows packaging, audit evidence
 - **M7 v1.0 Production Release** — G4 approval and release artifacts
 
-## 8. Quality Gates
+## 9. Quality Gates
 - **G0 Requirements Ready** — measurable scope + acceptance + risk
 - **G1 Design Ready** — architecture + workflow + interfaces + state/error strategy + testability
 - **G2 Verification Ready** — tests/static checks/non-destructive behavior + traceability
@@ -120,11 +135,11 @@ Role competency/authority SSOT: `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`.
 
 No milestone is complete solely because code exists; objective evidence is mandatory.
 
-## 9. Priority Rule
+## 10. Priority Rule
 `Content Safety > Mandatory MVP Contract > SSOT Compliance > Deterministic Correctness > LINE Compliance > Usability > Throughput > Advanced AI`
 
-## 10. Change Control
-Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery or output contract require:
+## 11. Change Control
+Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery, configuration schema or output contract require:
 1. SSOT requirement/design review
 2. ADR if architectural
 3. regression tests
@@ -132,7 +147,7 @@ Changes affecting split/crop, border, metadata, alpha/background, quality, dimen
 5. changelog/evidence update
 6. QA review before release
 
-## 11. Behavioral Model SSOT
+## 12. Behavioral Model SSOT
 - `27_END_TO_END_WORKFLOW_SPEC.md`
 - `28_USE_CASE_SPECIFICATION.md`
 - `29_UML_SYSTEM_MODEL.md`
@@ -143,8 +158,10 @@ Changes affecting split/crop, border, metadata, alpha/background, quality, dimen
 - `34_DATA_FLOW_AND_ARTIFACT_LIFECYCLE.md`
 - `35_INTERFACE_AND_STAGE_CONTRACTS.md`
 - `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
+- `44_PROVIDER_INTERFACE_ARCHITECTURE.md`
+- `45_TOML_CONFIGURATION_SPEC.md`
 
-## 12. Developer Handoff SSOT
+## 13. Developer Handoff SSOT
 Incoming development teams must begin with:
 - `42_DEVELOPER_START_HERE.md`
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
@@ -154,15 +171,14 @@ Incoming development teams must begin with:
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
 - `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
 
-These documents define onboarding, work packages, engineering conventions, near-term implementation sequence, acceptance evidence and current implementation state.
-
-## 13. Project Control References
+## 14. Project Control References
 - `00_TEAM_GOVERNANCE.md`
 - `01_PROJECT_CHARTER.md`
 - `02_PRODUCT_REQUIREMENTS.md`
 - `03_SYSTEM_ARCHITECTURE.md`
 - `04_IMAGE_PROCESSING_PIPELINE.md`
 - `06_QA_RULEBOOK.md`
+- `09_DATA_MODELS_AND_CONFIG.md`
 - `13_QUALITY_MANAGEMENT_PLAN.md`
 - `14_SOFTWARE_TEST_STRATEGY.md`
 - `20_REQUIREMENTS_TRACEABILITY_MATRIX.md`
@@ -172,7 +188,7 @@ These documents define onboarding, work packages, engineering conventions, near-
 - `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md`
 - `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`
 - `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`
-- `27_END_TO_END_WORKFLOW_SPEC.md` through `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
+- `27_END_TO_END_WORKFLOW_SPEC.md` through `45_TOML_CONFIGURATION_SPEC.md`
 - `DECISIONS.md`
 
 This document governs project direction; lower-level SSOT documents provide detailed behavior, design, execution and evidence rules.
