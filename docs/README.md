@@ -15,6 +15,7 @@ For a new development team, begin with:
 11. `58_SSOT_COVERAGE_AUDIT.md` — documentation readiness audit
 12. `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md` — live control-plane implementation status
 13. `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md` — current representative M2 Tier-B evidence and open findings
+14. `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md` — TB-003/TB-004 refinement contracts
 
 ## SSOT Rule
 MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hierarchy defined in `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`.
@@ -58,6 +59,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 - `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md` — ADR-028 joint planning for border/metadata overlap
+- `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md` — Tier-B metadata/extraction evidence refinement
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
@@ -67,6 +69,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 - `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`
 - `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`
+- `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md`
 
 ## Quality / Verification / Traceability
 - `06_QA_RULEBOOK.md`
@@ -80,6 +83,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `54_RELEASE_AND_SIGNOFF_CHECKLIST.md`
 - `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
 - `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`
+- `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md`
 
 ## UX / Distribution / Audit
 - `16_UI_UX_SPECIFICATION.md`
@@ -139,4 +143,6 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - M2 algorithms remain behind the headless pipeline/provider boundary; platform code does not duplicate image policy.
 - Border/metadata overlap is detected independently but cleanup is planned jointly before destructive mutation (ADR-028).
 - Tier-B evidence must change evidence models through SSOT/regression, never through ad-hoc threshold weakening.
+- Transparent-source metadata segmentation uses alpha-visible topology as primary support; RGB background-distance is the opaque fallback (TB-003).
+- Configured scaled extraction is a geometry hypothesis; visual separator alignment must be proven when the archetype requires it (TB-004).
 - Critical code is designed for headless automated testing with injectable/replaceable dependencies and permanent regression coverage for reproducible defects.
