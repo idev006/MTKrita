@@ -239,3 +239,22 @@ Required result rules:
 - REVIEW/FAILED handling remains a control-plane state transition and evidence decision, not worker-owned authority.
 
 This decision prevents the IPC/task-executor layer from becoming a second state machine or bypassing PathManager, ResourceBroker, JobStore, QA and durable artifact commitment.
+
+## ADR-027 — Workers Consume Only Control-Plane-Staged Immutable Inputs
+**Status:** Accepted
+
+External/user-selected filesystem paths shall never become worker execution authority merely because they appear in a task descriptor or UI payload. File inputs required by worker execution are first staged by the control plane into a PathManager-owned immutable job INPUT namespace and bound to cryptographic evidence.
+
+Required behavior:
+- MainBoard/ResourceBroker copies an explicitly selected source into `jobs/<job_id>/inputs/` using a PathManager `INPUT` reference;
+- staging never renames, deletes, overwrites or mutates the original source;
+- staged input is immutable/read-only by policy after successful staging;
+- staging records SHA-256 and byte size and refuses silent overwrite;
+- durable task descriptors carry logical input identity/hash, not arbitrary external absolute paths;
+- `ExecuteTaskCommandBuilder` reconstructs the staged path through `PathManager.input()` and verifies the staged bytes before command creation;
+- ExecuteTask carries only the verified staged input reference/evidence approved by the control plane;
+- workers independently verify staged input identity/integrity before processing where required;
+- workers may write only their private scratch during computation and may not mutate INPUT or final OUTPUT namespaces;
+- final output remains MainBoard-owned and is published only through ResourceBroker/CandidateResultCoordinator and ADR-024.
+
+This decision closes the gap between source immutability and process isolation: the worker receives a reproducible, workspace-owned, hash-bound input rather than a raw path controlled by external/user/task data.
