@@ -47,6 +47,45 @@ def _route_evidence(decision: TransparencyDecision) -> dict[str, object]:
     }
 
 
+def _early_review(
+    working: Image.Image,
+    *,
+    index: int,
+    row: int,
+    column: int,
+    extraction_rect: tuple[int, int, int, int] | None,
+    extraction_method: str | None,
+    extraction_confidence: float | None,
+    findings: list[Finding],
+    actions: list[str],
+    evidence: dict[str, object],
+) -> FramePipelineOutput:
+    decision = decide_source_background_route(working)
+    evidence.update(_route_evidence(decision))
+    mode = (
+        ProcessingMode.TRANSPARENT
+        if decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND
+        else ProcessingMode.OPAQUE
+    )
+    return FramePipelineOutput(
+        image=working,
+        transparency=decision,
+        result=FrameResult(
+            index=index,
+            row=row,
+            column=column,
+            status=FrameStatus.REVIEW,
+            extraction_rect=extraction_rect,
+            extraction_method=extraction_method,
+            extraction_confidence=extraction_confidence,
+            processing_mode=mode,
+            findings=findings,
+            actions=actions,
+            evidence=evidence,
+        ),
+    )
+
+
 def process_frame(
     image: Image.Image,
     *,
@@ -58,12 +97,7 @@ def process_frame(
     extraction_confidence: float | None = None,
     config: FramePipelineConfig | None = None,
 ) -> FramePipelineOutput:
-    """Run the M2 frame workflow without opaque-background segmentation.
-
-    Source transparency is captured after optional border cropping and before any
-    metadata cleanup that can introduce alpha. Opaque frames intentionally stop in
-    REVIEW until the M3 background-removal provider is available.
-    """
+    """Run the M2 frame workflow without opaque-background segmentation."""
     cfg = config or FramePipelineConfig()
     working = image.copy()
     actions: list[str] = []
@@ -74,7 +108,27 @@ def process_frame(
         border = detect_border(working)
         evidence["border_detected"] = border.detected
         evidence["border_confidence"] = border.confidence
+        evidence["border_contact_risk"] = border.contact_risk
         if border.detected:
+            if border.contact_risk:
+                findings.append(
+                    _finding(
+                        "BORDER.CONTACT_RISK",
+                        "Border may be connected to same-color artwork; automatic crop refused",
+                    )
+                )
+                return _early_review(
+                    working,
+                    index=index,
+                    row=row,
+                    column=column,
+                    extraction_rect=extraction_rect,
+                    extraction_method=extraction_method,
+                    extraction_confidence=extraction_confidence,
+                    findings=findings,
+                    actions=actions,
+                    evidence=evidence,
+                )
             if border.confidence < cfg.border_auto_threshold:
                 findings.append(
                     _finding(
@@ -83,37 +137,22 @@ def process_frame(
                         confidence=border.confidence,
                     )
                 )
-                decision = decide_source_background_route(working)
-                evidence.update(_route_evidence(decision))
-                return FramePipelineOutput(
-                    image=working,
-                    transparency=decision,
-                    result=FrameResult(
-                        index=index,
-                        row=row,
-                        column=column,
-                        status=FrameStatus.REVIEW,
-                        extraction_rect=extraction_rect,
-                        extraction_method=extraction_method,
-                        extraction_confidence=extraction_confidence,
-                        processing_mode=(
-                            ProcessingMode.TRANSPARENT
-                            if decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND
-                            else ProcessingMode.OPAQUE
-                        ),
-                        findings=findings,
-                        actions=actions,
-                        evidence=evidence,
-                    ),
+                return _early_review(
+                    working,
+                    index=index,
+                    row=row,
+                    column=column,
+                    extraction_rect=extraction_rect,
+                    extraction_method=extraction_method,
+                    extraction_confidence=extraction_confidence,
+                    findings=findings,
+                    actions=actions,
+                    evidence=evidence,
                 )
-            working = remove_border(
-                working,
-                border,
-                auto_threshold=cfg.border_auto_threshold,
-            )
+            working = remove_border(working, border, auto_threshold=cfg.border_auto_threshold)
             actions.append("REMOVE_BORDER")
 
-    # SSOT/ADR-023: capture source-frame routing before alpha-generating cleanup.
+    # ADR-023: capture source routing before metadata cleanup can create alpha.
     source_decision = decide_source_background_route(working)
     evidence.update(_route_evidence(source_decision))
 
@@ -133,9 +172,7 @@ def process_frame(
                 )
             else:
                 working = remove_detected_metadata(
-                    working,
-                    metadata,
-                    auto_threshold=cfg.metadata_auto_threshold,
+                    working, metadata, auto_threshold=cfg.metadata_auto_threshold
                 )
                 actions.append("REMOVE_FRAME_METADATA")
         elif "ambiguous" in metadata.reason.lower():
@@ -152,7 +189,6 @@ def process_frame(
         if source_decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND
         else ProcessingMode.OPAQUE
     )
-
     common = {
         "index": index,
         "row": row,
@@ -221,9 +257,5 @@ def process_frame(
     return FramePipelineOutput(
         image=working,
         transparency=source_decision,
-        result=FrameResult(
-            status=status,
-            content_bbox=final_content.bbox,
-            **common,
-        ),
+        result=FrameResult(status=status, content_bbox=final_content.bbox, **common),
     )
