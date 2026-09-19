@@ -1,7 +1,7 @@
 # MTKrita Master Project Control
 
 ## Status
-SSOT — Project Control Baseline v1.7
+SSOT — Project Control Baseline v1.8
 
 ## Purpose
 เอกสารควบคุมระดับบนสุดของโครงการ MTKrita เชื่อม Vision → Goals → Objectives → Mandatory Workflow → Workstreams → Milestones → Quality Gates → Release Criteria และป้องกัน scope drift
@@ -34,14 +34,15 @@ MTKrita เป็น **Document-Driven Project with SSOT** และใช้ **
 - **G-13 Operational Resilience** — pause/stop/resume/retry/recover/checkpoint/log/diagnostic เป็น first-class system behavior
 - **G-14 Verification Readiness** — golden corpus, acceptance matrix, release sign-off และ operational runbook ต้องพร้อมก่อน milestone gate ที่เกี่ยวข้อง
 - **G-15 Automated Testability** — critical code ต้องออกแบบให้ทดสอบ headless/automated ได้ง่าย โดย dependencies สำคัญสามารถ substitute/inject ได้ และ critical defects ต้องกลายเป็น regression tests
+- **G-16 Provenance-Safe Routing** — conditional background routing ต้องยึด source/extracted-frame transparency ก่อน alpha-generating cleanup และต้อง trace provenance ได้
 
 ## 3. Mandatory Minimum Objectives
 MVP ต้องพิสูจน์ได้ว่า:
 1. Sticker Sheet 5×2 split เป็น 10 PNG ตามลำดับถูกต้อง
 2. Border หลายสี/หลายความหนาถูกลบเมื่อ confidence สูง
 3. Frame number / sheet metadata ถูกลบโดยไม่ทำลาย artwork
-4. meaningful transparency ต้อง bypass background removal
-5. opaque frame route เข้าสู่ background-removal และสร้าง transparent RGBA สำหรับ supported archetypes
+4. source meaningful transparency ต้อง bypass background removal
+5. source opaque frame ต้องยังคงเข้า background-removal แม้ cleanup ภายหลังจะสร้าง alpha
 6. ambiguous destructive case → REVIEW
 7. source immutable และ source hash คงเดิม
 8. final PNG trace กลับ source sheet/frame ได้
@@ -55,6 +56,7 @@ MVP ต้องพิสูจน์ได้ว่า:
 16. structured logs + stable error codes + correlation identifiers ต้องเพียงพอสำหรับ diagnosis
 17. target milestone ต้องมี acceptance/golden-corpus evidence และ release/sign-off record ตาม gate
 18. critical features ต้องมี automated unit/contract/component/integration/regression tests ตามความเหมาะสม และ critical reliability paths ต้องรองรับ fault-injection/recovery tests
+19. manifest/evidence ต้องแยก source transparency, cleanup-generated alpha, background-removal alpha และ final alpha ได้
 
 ## 4. Mandatory End-to-End Workflow
 ```text
@@ -68,11 +70,13 @@ Split Frames
   ↓
 Adaptive Border Detection & Removal
   ↓
-Frame Number / Metadata Detection & Removal
+Classify Source Transparency Provenance
   ↓
-Transparency Routing
-  ├─ meaningful alpha → preserve / skip BG removal
-  └─ opaque → background removal → transparent RGBA
+Frame Number / Metadata Detection → Cleanup Mask / Evidence
+  ↓
+Route using Source Transparency Decision
+  ├─ source meaningful alpha → preserve alpha + cleanup → skip BG removal
+  └─ source opaque → background removal + cleanup → transparent RGBA
   ↓
 Content Bounds / Edge Safety
   ↓
@@ -101,8 +105,9 @@ Authoritative workflow detail: `27_END_TO_END_WORKFLOW_SPEC.md`.
 - Durable checkpoints, startup reconciliation, structured logs and diagnostic evidence are architectural requirements.
 - Critical behavior must be headless-testable; provider/infrastructure dependencies use explicit replaceable seams where needed.
 - Hidden global mutable state and UI-only business logic are prohibited because they undermine testability and reuse.
+- Source transparency classification occurs before metadata cleanup or any operation that can create alpha; downstream alpha changes must not rewrite the routing provenance.
 
-References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md` through `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`, ADR-015 through ADR-022.
+References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md` through `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`, ADR-015 through ADR-023.
 
 ## 6. Scope Boundaries
 ### Must-have before MVP release
@@ -134,14 +139,14 @@ Optional features may not delay mandatory MVP correctness.
 Role competency/authority SSOT: `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`.
 
 ## 8. Milestones
-- **M0 Documentation Baseline — COMPLETE** — governance, requirements, architecture, behavioral models, QA/testing/traceability and developer handoff baseline approved
-- **M1 Core Skeleton — COMPLETE** — CLI, manifests, immutable inspection, test harness, Windows CI
-- **M2 Transparent Processing Baseline — IN PROGRESS** — split + border + metadata + transparency routing + content/smart-fit + PNG validation
-- **M3 Opaque Processing Baseline** — background removal + REVIEW fallback + mixed corpus E2E
-- **M4 Desktop Beta** — drag/drop UI, exception-first review, preview, export
-- **M5 Production Automation** — 4 sheets/40 stickers, batch, multi-worker, pause/resume/recovery, ZIP/manifest
-- **M6 v1.0 Release Candidate** — regression/golden corpus, Windows packaging, reliability fault-injection, audit evidence
-- **M7 v1.0 Production Release** — G4 approval and release artifacts
+- **M0 Documentation Baseline — COMPLETE**
+- **M1 Core Skeleton — COMPLETE**
+- **M2 Transparent Processing Baseline — IN PROGRESS**
+- **M3 Opaque Processing Baseline**
+- **M4 Desktop Beta**
+- **M5 Production Automation**
+- **M6 v1.0 Release Candidate**
+- **M7 v1.0 Production Release**
 
 ## 9. Quality Gates
 - **G0 Requirements Ready** — measurable scope + acceptance + risk
@@ -156,7 +161,7 @@ No milestone is complete solely because code exists; objective evidence is manda
 `Content Safety > Data/State Integrity > Mandatory MVP Contract > SSOT Compliance > Deterministic Correctness > Recoverability > LINE Compliance > Usability > Throughput > Advanced AI`
 
 ## 11. Change Control
-Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery, path/resource ownership, worker protocol, configuration schema, test seams or output contract require:
+Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery, path/resource ownership, worker protocol, configuration schema, test seams, provenance or output contract require:
 1. SSOT requirement/design review
 2. ADR if architectural
 3. automated regression/fault tests
@@ -187,9 +192,7 @@ Operations/release/maintenance references:
 - `58_SSOT_COVERAGE_AUDIT.md`
 
 ## 13. Documentation Handoff Status
-`58_SSOT_COVERAGE_AUDIT.md` records **READY FOR DEVELOPMENT HANDOFF**. This status means documentation is sufficient to continue implementation; it does not mean the software itself is production-ready.
+Documentation is **READY FOR DEVELOPMENT HANDOFF** after the provenance-order correction recorded in ADR-023. This status means documentation is sufficient to continue implementation; it does not mean the software itself is production-ready.
 
 ## 14. Project Control References
 See `docs/README.md` for the complete indexed SSOT set.
-
-This document governs project direction; lower-level SSOT documents provide detailed behavior, design, execution and evidence rules.
