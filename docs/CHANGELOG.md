@@ -1,5 +1,14 @@
 # Documentation Changelog
 
+## v0.4 — 2026-09-19
+- Added developer handoff package and onboarding entry point.
+- Added actionable implementation backlog / work breakdown for M2 through release.
+- Added coding standards and repository conventions.
+- Added formal acceptance test matrix mapped to mandatory MVP capabilities and milestone gates.
+- Added M2/M3 near-term implementation sequence and integration checkpoints.
+- Added current implementation status and known gaps to distinguish documented behavior from implemented/verified behavior.
+- Updated documentation index and Master Project Control to expose a single developer handoff entry path.
+
 ## v0.3 — 2026-09-19
 - Promoted supported input archetypes into main SSOT.
 - Added formal end-to-end workflow specification including happy, alternate, review and failure flows.
