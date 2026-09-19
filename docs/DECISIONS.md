@@ -216,3 +216,26 @@ Rules:
 - schema evolution for durable descriptors requires explicit migration tests and must not silently invent missing critical fields.
 
 This decision enables pause/resume/restart without depending on process memory and prevents recovery from changing task priority or execution meaning.
+
+## ADR-026 — ExecuteTask Is Immutable and Worker Results Are Candidates
+**Status:** Accepted
+
+Cross-process task execution shall use an explicit immutable `ExecuteTask` command contract derived from durable task metadata and MainBoard-approved resource references. A worker result is always a **candidate** until the control plane validates durable identity, lease/attempt authority, file/hash evidence and the applicable QA/artifact-commit policy.
+
+Required command rules:
+- `job_id`, `task_id`, `worker_id` and positive `attempt` are mandatory and must match the durable RUNNING assignment;
+- payload carries a versioned immutable task descriptor snapshot rather than mutable domain objects;
+- worker-private scratch identity is supplied by the control plane and must resolve through PathManager ownership rules;
+- input/resource references must be explicit approved data and must not include arbitrary final-output destinations;
+- no callable, module path, executable expression, pickled object, JobStore handle, UI object or shared mutable service may cross the task command boundary;
+- worker task executor is accessed behind an explicit interface/protocol and returns a structured candidate result.
+
+Required result rules:
+- `TaskStarted`, `TaskSucceededCandidate`, `TaskReviewCandidate` and `TaskFailed` carry the exact assigned `task_id`/`worker_id`/`attempt` identity;
+- success candidates may describe only worker-private provisional artifacts using safe relative names plus cryptographic hash/byte-size evidence; they never name or mutate final destinations;
+- `TaskSucceededCandidate` never directly changes durable task state to SUCCEEDED;
+- MainBoard reconstructs authoritative PathRefs, validates the current durable RUNNING attempt/lease, and invokes the existing ADR-024 artifact-commit protocol before accepting success;
+- stale, malformed, identity-mismatched, hash-mismatched or out-of-policy candidate results are rejected without overwriting authoritative artifacts;
+- REVIEW/FAILED handling remains a control-plane state transition and evidence decision, not worker-owned authority.
+
+This decision prevents the IPC/task-executor layer from becoming a second state machine or bypassing PathManager, ResourceBroker, JobStore, QA and durable artifact commitment.
