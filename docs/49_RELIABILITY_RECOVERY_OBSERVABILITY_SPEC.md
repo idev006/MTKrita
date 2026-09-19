@@ -1,7 +1,7 @@
 # MTKrita Reliability, Recovery and Observability Specification
 
 ## Status
-SSOT — Reliability Baseline v1.0
+SSOT — Reliability Baseline v1.1
 
 ## Purpose
 กำหนดคุณสมบัติด้านความคงทน ความเชื่อถือได้ ความสามารถในการหยุด/พัก/ทำต่อ การกู้คืน การบันทึก และการวินิจฉัยข้อผิดพลาดของ MTKrita
@@ -34,18 +34,29 @@ Safe commit sequence:
 ```text
 produce provisional output
   ↓
-validate
+validate + hash
   ↓
-hash
+persist durable artifact COMMIT_INTENT
   ↓
 commit/promote artifact atomically
   ↓
-commit durable state transaction
+verify promoted artifact hash/identity
+  ↓
+commit durable task/artifact state transaction
   ↓
 publish completion event
 ```
 
-If the process crashes before durable commit, startup reconciliation treats the work as incomplete.
+Filesystem rename and SQLite cannot share one native ACID transaction. Therefore ADR-024 requires a durable commit-intent journal and idempotent reconciliation.
+
+Recovery outcomes:
+- intent + no final artifact → incomplete, never success
+- intent + matching final artifact + authoritative task attempt → finalize durably
+- intent + mismatching final artifact/hash → integrity failure; never overwrite silently
+- stale/superseded task attempt → cannot finalize or claim the artifact
+- committed record → reusable completion evidence subject to normal integrity verification
+
+Artifact-commit reconciliation must run before generic orphan-RUNNING-task interruption on startup, so valid work promoted immediately before a crash is not discarded as stale.
 
 ## 4. Checkpoints
 
@@ -75,7 +86,7 @@ Requirements:
 - stop admission of new work
 - current work reaches a safe cooperative boundary when possible
 - durable checkpoints/state are flushed
-- job transitions to PAUSED
+- job transitions through PAUSING to PAUSED
 - resume reconstructs scheduler state from durable JobStore
 - committed stages are reused when still valid
 
@@ -95,25 +106,29 @@ The system must not label interrupted work as FAIL unless failure semantics appl
 
 ## 7. Application Restart Recovery
 
-Startup recovery flow:
+Startup recovery order:
 
 ```text
-open JobStore
+open JobStore + artifact commit journal
   ↓
 validate schema/version
   ↓
-find RUNNING/STOPPING tasks from previous process
+reconcile pending artifact commit intents against final-file hashes
   ↓
-mark old workers LOST
+finalize valid promoted artifacts/tasks where authoritative
   ↓
-reconcile provisional artifacts
+find PROCESSING / PAUSING / STOPPING jobs from previous process
   ↓
-verify committed artifact hashes
+mark remaining orphaned RUNNING tasks INTERRUPTED
   ↓
-restore jobs as INTERRUPTED / PAUSED / READY_TO_RESUME
+transition affected jobs to INTERRUPTED
+  ↓
+verify reusable committed checkpoints/artifacts
   ↓
 allow controlled resume
 ```
+
+Already durable PAUSED/STOPPED/terminal jobs are not rewritten merely because the process restarted.
 
 ## 8. Retry Policy
 
@@ -174,6 +189,7 @@ RESOURCE.DISK_FULL
 WORKER.LOST
 PROVIDER.FAILURE
 EXPORT.ATOMIC_COMMIT_FAILED
+ARTIFACT.INTEGRITY_FAILED
 CONFIG.INVALID
 INTERNAL.CONTRACT_VIOLATION
 ```
@@ -196,6 +212,7 @@ The application should be able to export a diagnostic bundle for a job, containi
 - engine/provider/dependency versions
 - structured logs
 - state-transition history
+- artifact commit journal/status
 - error descriptors
 - environment summary
 - artifact hashes/metadata
@@ -217,6 +234,7 @@ Minimum operational metrics:
 - failure rate by code/provider
 - background-removal confidence distribution
 - export failures
+- artifact reconciliation outcomes
 
 ## 14. Event Journal
 
@@ -250,6 +268,7 @@ Before disk/memory exhaustion causes corruption:
 - hash critical source and committed artifacts
 - verify before reusing checkpoint
 - atomic promotion for final artifacts
+- durable commit intent before authoritative promotion
 - never silently overwrite mismatched artifact identity
 - config hash included in provenance
 
@@ -262,11 +281,16 @@ On startup:
 - incompatible versions are not guessed
 - migration is logged and tested
 
+Modular persistence extensions that share the JobStore SQLite database must also expose an explicit schema version and participate in production schema-freeze review.
+
 ## 19. Testing Required
 
 Reliability acceptance suite includes:
 - kill worker mid-frame
-- kill application mid-write
+- kill application before artifact promotion
+- kill application after artifact promotion but before durable finalization
+- restart with mismatching/tampered final artifact
+- restart with stale/superseded artifact intent
 - resume after restart
 - pause/resume with queued and active tasks
 - expired lease and late stale result
@@ -283,8 +307,9 @@ Reliability acceptance suite includes:
 A job is complete only when:
 - all accepted outputs are durably committed
 - output hashes are recorded
+- artifact commit records are finalized
 - manifest/job state is committed
-- no required frame remains RUNNING/PENDING
+- no required frame/task remains RUNNING/PENDING
 - REVIEW/FAIL frames are explicitly represented
 - diagnostics/evidence are internally consistent
 
@@ -295,3 +320,4 @@ A job is complete only when:
 - `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`
 - `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`
 - `31_STATE_MACHINE_SPEC.md`
+- ADR-020 and ADR-024
