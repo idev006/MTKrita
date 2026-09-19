@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .job_store import JobStore
+from .m2_task_descriptor import M2_FRAME_TASK_TYPE, M2TaskDescriptorError, parse_m2_frame_descriptor
 from .messages import MessageEnvelope, MessageKind
 from .path_manager import PathManager
 from .resource_broker import ResourceBroker
@@ -115,6 +116,7 @@ class ExecuteTaskCommandBuilder:
         if not descriptor.reconstructable or descriptor.descriptor_version <= 0:
             raise RuntimeError("task has no executable durable descriptor")
 
+        self._validate_descriptor(descriptor.descriptor, descriptor.descriptor_version)
         scratch = self._paths.prepare_worker_scratch(task.job_id, task.worker_id)
         self._paths.assert_owned(scratch.path)
         inputs = self._resolve_inputs(task.job_id, descriptor.descriptor)
@@ -134,15 +136,30 @@ class ExecuteTaskCommandBuilder:
             },
         )
 
+    @staticmethod
+    def _validate_descriptor(descriptor: dict[str, Any], descriptor_version: int) -> None:
+        if descriptor.get("task_type") != M2_FRAME_TASK_TYPE:
+            return
+        try:
+            parse_m2_frame_descriptor(descriptor, descriptor_version=descriptor_version)
+        except M2TaskDescriptorError as exc:
+            raise RuntimeError(f"invalid M2 frame task descriptor: {exc}") from exc
+
     def _resolve_inputs(self, job_id: str, descriptor: dict[str, Any]) -> tuple[TaskInput, ...]:
-        input_name = descriptor.get("input_name")
-        input_sha256 = descriptor.get("input_sha256")
-        if input_name is None and input_sha256 is None:
-            return ()
-        if not isinstance(input_name, str) or not input_name:
-            raise RuntimeError("task descriptor input_name must be a non-empty string")
-        if not isinstance(input_sha256, str):
-            raise RuntimeError("task descriptor input_sha256 must be a string")
+        if descriptor.get("task_type") == M2_FRAME_TASK_TYPE:
+            parsed = parse_m2_frame_descriptor(descriptor)
+            input_name = parsed.input_name
+            input_sha256 = parsed.input_sha256
+        else:
+            input_name = descriptor.get("input_name")
+            input_sha256 = descriptor.get("input_sha256")
+            if input_name is None and input_sha256 is None:
+                return ()
+            if not isinstance(input_name, str) or not input_name:
+                raise RuntimeError("task descriptor input_name must be a non-empty string")
+            if not isinstance(input_sha256, str):
+                raise RuntimeError("task descriptor input_sha256 must be a string")
+
         source = self._paths.input(job_id, input_name)
         try:
             verified = self._resources.verify_input_file(
