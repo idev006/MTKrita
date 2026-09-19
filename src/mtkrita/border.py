@@ -13,6 +13,7 @@ class BorderSide:
     color: tuple[int, int, int]
     confidence: float
     contact_risk: bool = False
+    offset: int = 0
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,15 @@ class BorderDetection:
             side is not None and side.contact_risk
             for side in (self.left, self.top, self.right, self.bottom)
         )
+
+
+@dataclass(frozen=True)
+class _InsetCandidate:
+    side: str
+    offset: int
+    color: tuple[int, int, int]
+    coverage: float
+    visible_fraction: float
 
 
 def _distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
@@ -97,6 +107,12 @@ def _strip_samples(
     return samples
 
 
+def _visible_fraction(samples: list[tuple[int, int, int] | None]) -> float:
+    if not samples:
+        return 0.0
+    return sum(sample is not None for sample in samples) / len(samples)
+
+
 def _matching_fraction(
     samples: list[tuple[int, int, int] | None],
     color: tuple[int, int, int],
@@ -110,7 +126,7 @@ def _matching_fraction(
     return matches / len(samples)
 
 
-def _detect_side(
+def _detect_edge_side(
     image: Image.Image,
     side: str,
     *,
@@ -151,7 +167,176 @@ def _detect_side(
         color=outer_color,
         confidence=mean(coverages),
         contact_risk=contact_risk,
+        offset=0,
     )
+
+
+def _find_inset_candidate(
+    image: Image.Image,
+    side: str,
+    *,
+    max_search: int,
+    search_tolerance: int,
+    min_visible_fraction: float,
+    min_candidate_coverage: float,
+) -> _InsetCandidate | None:
+    candidates: list[_InsetCandidate] = []
+    for offset in range(1, max_search):
+        strip = _strip_samples(image, side, offset)
+        visible = _visible_fraction(strip)
+        color, coverage = _dominant_color(strip, search_tolerance)
+        if visible < min_visible_fraction or coverage < min_candidate_coverage:
+            continue
+        candidates.append(
+            _InsetCandidate(
+                side=side,
+                offset=offset,
+                color=color,
+                coverage=coverage,
+                visible_fraction=visible,
+            )
+        )
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda item: (item.coverage, item.visible_fraction, -item.offset),
+    )
+
+
+def _consensus_candidates(
+    candidates: dict[str, _InsetCandidate],
+    *,
+    consensus_tolerance: int,
+) -> dict[str, _InsetCandidate]:
+    if len(candidates) < 3:
+        return {}
+
+    ranked: list[tuple[int, float, dict[str, _InsetCandidate]]] = []
+    for seed in candidates.values():
+        matched = {
+            side: candidate
+            for side, candidate in candidates.items()
+            if _distance(seed.color, candidate.color) <= consensus_tolerance
+        }
+        ranked.append(
+            (
+                len(matched),
+                sum(candidate.coverage for candidate in matched.values()),
+                matched,
+            )
+        )
+    side_count, _, best = max(ranked, key=lambda item: (item[0], item[1]))
+    return best if side_count >= 3 else {}
+
+
+def _offset_group_nearest_peak(offsets: list[int], peak: int) -> list[int]:
+    if not offsets:
+        return []
+    groups: list[list[int]] = []
+    current = [offsets[0]]
+    for offset in offsets[1:]:
+        if offset - current[-1] <= 2:
+            current.append(offset)
+        else:
+            groups.append(current)
+            current = [offset]
+    groups.append(current)
+    return min(groups, key=lambda group: min(abs(value - peak) for value in group))
+
+
+def _build_inset_side(
+    image: Image.Image,
+    candidate: _InsetCandidate,
+    *,
+    max_search: int,
+    search_tolerance: int,
+    contact_fraction_threshold: float,
+    consensus_side_count: int,
+) -> BorderSide | None:
+    matching_offsets: list[int] = []
+    for offset in range(max_search):
+        strip = _strip_samples(image, candidate.side, offset)
+        if _visible_fraction(strip) < 0.60:
+            continue
+        if _matching_fraction(strip, candidate.color, search_tolerance) >= 0.45:
+            matching_offsets.append(offset)
+
+    group = _offset_group_nearest_peak(matching_offsets, candidate.offset)
+    if not group:
+        return None
+    start = min(group)
+    end = max(group)
+    thickness = (end - start) + 1
+
+    inner_offset = end + 1
+    inner = (
+        _strip_samples(image, candidate.side, inner_offset)
+        if inner_offset < max_search
+        else []
+    )
+    trim = min(thickness, max(0, len(inner) // 4))
+    if trim and len(inner) > 2 * trim:
+        inner = inner[trim:-trim]
+    contact_tolerance = max(32, search_tolerance)
+    contact_risk = (
+        _matching_fraction(inner, candidate.color, contact_tolerance)
+        >= contact_fraction_threshold
+    )
+
+    consensus_bonus = 0.15 if consensus_side_count == 4 else 0.05
+    confidence = min(1.0, candidate.coverage + consensus_bonus)
+    return BorderSide(
+        side=candidate.side,
+        thickness=thickness,
+        color=candidate.color,
+        confidence=confidence,
+        contact_risk=contact_risk,
+        offset=start,
+    )
+
+
+def _detect_inset_sides(
+    image: Image.Image,
+    *,
+    max_search: int,
+    color_tolerance: int,
+    contact_fraction_threshold: float,
+) -> dict[str, BorderSide]:
+    search_tolerance = max(24, color_tolerance * 3)
+    candidates = {
+        side: candidate
+        for side in ("left", "top", "right", "bottom")
+        if (
+            candidate := _find_inset_candidate(
+                image,
+                side,
+                max_search=max_search,
+                search_tolerance=search_tolerance,
+                min_visible_fraction=0.75,
+                min_candidate_coverage=0.70,
+            )
+        )
+        is not None
+    }
+    consensus = _consensus_candidates(candidates, consensus_tolerance=48)
+    if not consensus:
+        return {}
+
+    side_count = len(consensus)
+    detected: dict[str, BorderSide] = {}
+    for side, candidate in consensus.items():
+        result = _build_inset_side(
+            image,
+            candidate,
+            max_search=max_search,
+            search_tolerance=search_tolerance,
+            contact_fraction_threshold=contact_fraction_threshold,
+            consensus_side_count=side_count,
+        )
+        if result is not None:
+            detected[side] = result
+    return detected
 
 
 def detect_border(
@@ -179,11 +364,29 @@ def detect_border(
         "min_coverage": min_coverage,
         "contact_fraction_threshold": contact_fraction_threshold,
     }
+    edge = {
+        side: _detect_edge_side(rgba, side, **shared)
+        for side in ("left", "top", "right", "bottom")
+    }
+    if any(edge.values()):
+        return BorderDetection(
+            left=edge["left"],
+            top=edge["top"],
+            right=edge["right"],
+            bottom=edge["bottom"],
+        )
+
+    inset = _detect_inset_sides(
+        rgba,
+        max_search=max_thickness,
+        color_tolerance=color_tolerance,
+        contact_fraction_threshold=contact_fraction_threshold,
+    )
     return BorderDetection(
-        left=_detect_side(rgba, "left", **shared),
-        top=_detect_side(rgba, "top", **shared),
-        right=_detect_side(rgba, "right", **shared),
-        bottom=_detect_side(rgba, "bottom", **shared),
+        left=inset.get("left"),
+        top=inset.get("top"),
+        right=inset.get("right"),
+        bottom=inset.get("bottom"),
     )
 
 
@@ -198,10 +401,10 @@ def remove_border(
     if detection.contact_risk:
         raise ValueError("border/artwork contact risk requires review")
 
-    left = detection.left.thickness if detection.left else 0
-    top = detection.top.thickness if detection.top else 0
-    right = detection.right.thickness if detection.right else 0
-    bottom = detection.bottom.thickness if detection.bottom else 0
+    left = detection.left.offset + detection.left.thickness if detection.left else 0
+    top = detection.top.offset + detection.top.thickness if detection.top else 0
+    right = detection.right.offset + detection.right.thickness if detection.right else 0
+    bottom = detection.bottom.offset + detection.bottom.thickness if detection.bottom else 0
     if left + right >= image.width or top + bottom >= image.height:
         raise ValueError("detected border consumes frame")
     return image.crop((left, top, image.width - right, image.height - bottom))

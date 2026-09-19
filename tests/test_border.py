@@ -14,6 +14,32 @@ def _framed(size: tuple[int, int], color: tuple[int, int, int, int], width: int)
     return image
 
 
+def _inset_framed(
+    size: tuple[int, int] = (100, 80),
+    *,
+    inset: int = 6,
+    width: int = 3,
+) -> Image.Image:
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    colors = (
+        (160, 220, 100, 255),
+        (175, 235, 115, 255),
+        (150, 210, 90, 255),
+    )
+    for offset in range(width):
+        draw.rectangle(
+            (
+                inset + offset,
+                inset + offset,
+                size[0] - 1 - inset - offset,
+                size[1] - 1 - inset - offset,
+            ),
+            outline=colors[offset % len(colors)],
+        )
+    return image
+
+
 def test_detects_different_border_colors_and_widths() -> None:
     green = _framed((80, 60), (180, 220, 80, 255), 3)
     black = _framed((80, 60), (12, 12, 12, 255), 7)
@@ -72,3 +98,48 @@ def test_same_color_artwork_touching_inner_border_requires_review() -> None:
         assert "contact risk" in str(exc)
     else:
         raise AssertionError("expected conservative border removal refusal")
+
+
+def test_inset_border_after_transparent_padding_is_detected_and_removed() -> None:
+    image = _inset_framed()
+    detection = detect_border(image)
+
+    assert detection.detected is True
+    assert detection.contact_risk is False
+    assert detection.confidence >= 0.995
+    for side in (detection.left, detection.top, detection.right, detection.bottom):
+        assert side is not None
+        assert side.offset == 6
+        assert side.thickness == 3
+
+    result = remove_border(image, detection)
+    assert result.size == (82, 62)
+
+
+def test_single_near_edge_artwork_strip_cannot_authorize_inset_crop() -> None:
+    image = Image.new("RGBA", (100, 80), (0, 0, 0, 0))
+    ImageDraw.Draw(image).line((5, 10, 5, 69), fill=(20, 120, 230, 255), width=3)
+
+    detection = detect_border(image)
+
+    assert detection.detected is False
+
+
+def test_inset_border_same_color_inner_contact_requires_review() -> None:
+    image = _inset_framed()
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((9, 24, 22, 55), fill=(160, 220, 100, 255))
+
+    detection = detect_border(image)
+
+    assert detection.left is not None
+    assert detection.left.offset == 6
+    assert detection.left.contact_risk is True
+    assert detection.contact_risk is True
+
+    try:
+        remove_border(image, detection)
+    except ValueError as exc:
+        assert "contact risk" in str(exc)
+    else:
+        raise AssertionError("expected inset border contact-risk refusal")
