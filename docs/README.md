@@ -1,5 +1,14 @@
 # MTKrita Documentation Index
 
+## Start Here — Developer Handoff
+For a new development team, begin with:
+1. `42_DEVELOPER_START_HERE.md` — onboarding entry point
+2. `37_DEVELOPER_HANDOFF_PACKAGE.md` — handoff package and project rules
+3. `41_M2_M3_IMPLEMENTATION_PLAN.md` — near-term implementation sequence
+4. `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md` — actionable work packages
+5. `40_ACCEPTANCE_TEST_MATRIX.md` — acceptance evidence required
+6. `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md` — coding/repository rules
+
 ## SSOT Rule
 MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hierarchy defined in `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`.
 
@@ -44,6 +53,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `14_SOFTWARE_TEST_STRATEGY.md`
 - `20_REQUIREMENTS_TRACEABILITY_MATRIX.md`
 - `22_DEFINITION_OF_DONE.md`
+- `40_ACCEPTANCE_TEST_MATRIX.md`
 
 ## UX / Distribution / Audit
 - `16_UI_UX_SPECIFICATION.md`
@@ -55,6 +65,13 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 ## Project Execution
 - `08_MVP_SCOPE_AND_ROADMAP.md`
 - `21_PROJECT_EXECUTION_PLAN.md`
+- `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md`
+- `41_M2_M3_IMPLEMENTATION_PLAN.md`
+
+## Engineering / Handoff
+- `37_DEVELOPER_HANDOFF_PACKAGE.md`
+- `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md`
+- `42_DEVELOPER_START_HERE.md`
 
 ## History
 - `CHANGELOG.md`
