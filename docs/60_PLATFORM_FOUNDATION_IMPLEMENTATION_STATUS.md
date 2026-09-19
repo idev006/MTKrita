@@ -1,7 +1,7 @@
 # MTKrita Platform Foundation Implementation Status
 
 ## Status
-SSOT — Platform Foundation Implementation Track v2.0
+SSOT — Platform Foundation Implementation Track v2.1
 
 ## Purpose
 Track implementation of the approved PathManager/MainBoard/ResourceBroker/multi-worker control-plane architecture separately from M2 image-processing work.
@@ -47,6 +47,7 @@ PR #10 / branch `feat/platform-control-foundation`
 - renewal/release restricted to authoritative attempt
 - newer attempts invalidate old worker results
 - runtime guard plus durable JobStore task identity
+- recovery/watchdog may discard the exact matching runtime lease even after expiry without authorizing stale attempts
 
 #### Pause / stop / resume lifecycle
 - SSOT state model includes `PAUSING`, `PAUSED`, `STOPPING`, `STOPPED`, `INTERRUPTED`
@@ -128,8 +129,18 @@ PR #10 / branch `feat/platform-control-foundation`
 - if runtime assignment fails after durable RUNNING assignment, compensation transitions that exact authoritative attempt to `INTERRUPTED`, releases any runtime lease and releases scheduler inflight capacity
 - automated tests cover successful assignment, runtime-assignment compensation and stale-scheduler rejection
 
+#### Worker-loss watchdog reconciliation
+- `WorkerLossCoordinator` consumes WorkerManager LOST detection and reconciles it against durable task authority
+- only the exact durable RUNNING task owned by the LOST worker/attempt may be interrupted
+- worker-loss transition uses `TASK.INTERRUPTED_BY_WORKER_LOSS`, not FAIL or SUCCESS
+- matching runtime lease is discarded even if already expired
+- scheduler inflight capacity is released when the lost task was dispatched through the scheduler
+- policy may requeue the same scheduled task when queue capacity permits; if requeue is disabled or capacity unavailable, durable state remains INTERRUPTED for later reconstruction
+- idle worker loss does not mutate unrelated task state
+- automated tests cover process death, heartbeat timeout, requeue and no-requeue behavior
+
 ### Architectural rule
-Workers compute only against immutable input/private scratch. Shared/final mutations are MainBoard-owned. Authoritative job/task/artifact state is durable and single-writer. UI issues commands through application services and never mutates workers or persistence directly. Scheduler controls admission/dispatch only. WorkerManager owns runtime process/liveness state but does not replace durable JobStore authority. Dispatch coordination must reconcile runtime state to durable authority, never the reverse. `REVIEW > destructive guess` remains unchanged.
+Workers compute only against immutable input/private scratch. Shared/final mutations are MainBoard-owned. Authoritative job/task/artifact state is durable and single-writer. UI issues commands through application services and never mutates workers or persistence directly. Scheduler controls admission/dispatch only. WorkerManager owns runtime process/liveness state but does not replace durable JobStore authority. Dispatch/watchdog coordination reconciles runtime state to durable authority, never the reverse. `REVIEW > destructive guess` remains unchanged.
 
 ### CI status
 - PathManager/ResourceBroker/JobStore/MainBoard/lifecycle/recovery baseline: Ruff + pytest PASS.
@@ -137,7 +148,7 @@ Workers compute only against immutable input/private scratch. Shared/final mutat
 - durable artifact commit + crash reconciliation fault-injection suite: Ruff + pytest PASS.
 - artifact-first startup recovery integration: Ruff + pytest PASS.
 - observability/diagnostics/scheduler/WorkerManager code head: Ruff + pytest PASS.
-- DispatchCoordinator head requires fresh green Ruff + pytest evidence before this revision is considered verified.
+- DispatchCoordinator + worker-loss watchdog head requires fresh green Ruff + pytest evidence before this revision is considered verified.
 
 ### Known reliability gaps
 - `StartupReconciler` still interrupts multiple tasks then the job using separate SQLite transactions. The sequence is idempotent and safe from false success, but a future store-owned recovery transaction can reduce partial-reconciliation states further.
@@ -145,20 +156,19 @@ Workers compute only against immutable input/private scratch. Shared/final mutat
 - diagnostic bundle baseline does not yet enumerate full artifact-commit journal history or provider/dependency inventories beyond available runtime summary.
 - scheduler queue is currently in-memory; deterministic reconstruction from durable JobStore after restart remains to be implemented.
 - WorkerManager still uses an abstract process-handle contract; concrete Windows worker process/message transport remains to be selected and implemented.
-- worker LOST handling is detected but not yet wired to durable task interruption/requeue policy.
+- worker-loss requeue currently preserves the scheduled descriptor in-memory; restart-time reconstruction from durable INTERRUPTED tasks remains a separate requirement.
 
 ### Next work packages
-1. heartbeat watchdog action: worker LOST → authoritative task interruption/requeue policy
-2. scheduler reconstruction from durable task state after pause/resume/restart
-3. concrete Windows process worker adapter and message transport
-4. expand diagnostic bundle with artifact-commit journal and provider inventory
-5. tighten multi-record startup reconciliation transaction where practical
-6. production schema freeze/migration review for all persistence tables
+1. scheduler reconstruction from durable task state after pause/resume/restart
+2. concrete Windows process worker adapter and message transport
+3. expand diagnostic bundle with artifact-commit journal and provider inventory
+4. tighten multi-record startup reconciliation transaction where practical
+5. production schema freeze/migration review for all persistence tables
 
 ## Separation from M2
 This platform track is intentionally separate from PR #9 so image-processing verification and control-plane infrastructure can be reviewed independently.
 
 ## Verification
-Every platform component remains headless-testable. Negative/fault tests cover path ownership, stale writes, duplicate/stale attempts, commit-intent crash boundaries, mismatching artifacts, recovery idempotency, diagnostic redaction/source-image exclusion, queue/inflight bounds, scheduling fairness, worker heartbeat/lifecycle behavior and dispatch compensation. No final artifact or file-presence heuristic can bypass durable task/job state.
+Every platform component remains headless-testable. Negative/fault tests cover path ownership, stale writes, duplicate/stale attempts, commit-intent crash boundaries, mismatching artifacts, recovery idempotency, diagnostic redaction/source-image exclusion, queue/inflight bounds, scheduling fairness, worker heartbeat/lifecycle behavior, dispatch compensation and worker-loss interruption/requeue. No final artifact or file-presence heuristic can bypass durable task/job state.
 
 References: `31_STATE_MACHINE_SPEC.md`, `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`, `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`, `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`, `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`, `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`, ADR-017 through ADR-024.
