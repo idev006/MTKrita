@@ -61,3 +61,9 @@ def test_mainboard_composes_services_without_business_logic(tmp_path: Path) -> N
     assert board.leases is not None
     assert board.lifecycle.jobs is store
     assert board.recovery.jobs is store
+    assert board.artifact_journal is not None
+    assert board.artifact_commits.journal is board.artifact_journal
+    assert board.artifact_commits.broker is board.resources
+    assert board.artifact_recovery.journal is board.artifact_journal
+    assert board.artifact_recovery.broker is board.resources
+    assert board.artifact_recovery.jobs is store
