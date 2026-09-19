@@ -1,5 +1,16 @@
 # Documentation Changelog
 
+## v0.5 — 2026-09-19
+- Finalized architecture principles for PathManager, MainBoard/control plane, ResourceBroker, multi-worker isolation, leases/attempts, centralized shared-state commitment, pause/resume/recovery and observability.
+- Added engineering handoff checklist and reference implementation blueprint.
+- Added golden corpus/test-data specification.
+- Added operational runbook for pause/resume/recovery/worker loss/provider failure.
+- Added release and sign-off checklist.
+- Added project glossary/naming standard.
+- Added maintenance/extension guide and team execution playbook.
+- Added SSOT coverage audit and marked documentation READY FOR DEVELOPMENT HANDOFF.
+- Updated Documentation Index and Master Project Control to expose the final handoff package.
+
 ## v0.4 — 2026-09-19
 - Added developer handoff package and onboarding entry point.
 - Added actionable implementation backlog / work breakdown for M2 through release.
