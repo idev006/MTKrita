@@ -1,5 +1,19 @@
 # Documentation Changelog
 
+## v0.8 — 2026-09-19
+- Accepted ADR-026: `ExecuteTask` is immutable and worker results remain candidates until durable control-plane acceptance.
+- Added `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md` defining exact candidate validation order, one-primary-artifact MVP cardinality, MainBoard-owned target resolution and ADR-024 success commitment.
+- Implemented Windows spawn worker process/session adapter, validated worker-event routing and WorkerRuntimeController.
+- Added real Windows CI smoke coverage for spawn, ready, heartbeat, graceful stop/process exit and ExecuteTask transport.
+- Added strict ExecuteTask command builder/parser, TaskExecutor interface and versioned candidate-result schema.
+- Added `CandidateResultCoordinator` enforcing durable RUNNING worker/attempt authority, active lease, BUSY ownership, provisional hash/size validation and trusted final target resolution.
+- Successful candidates now reach durable SUCCEEDED only through the existing ADR-024 artifact commit protocol; REVIEW/FAILED transition durably before runtime ownership release.
+- Explicitly restricted current success contract to exactly one primary artifact per task; multi-artifact atomic/group commit requires a separate design decision.
+- Added regression tests for stale attempts, wrong authority, hash/size mismatch, cross-job target, zero/multiple artifacts and runtime ownership release.
+- Added component end-to-end authority test: dispatch → ExecuteTask → test executor scratch → validated candidate → ADR-024 commit → durable success.
+- Updated Windows worker IPC spec to v1.2, platform status to v2.5 and documentation index to include task/result authority SSOT.
+- Current code checkpoint passed Ruff + pytest on Windows CI; packaged/frozen spawn and concrete M2 image executor integration remain future gates.
+
 ## v0.7 — 2026-09-19
 - Extended platform control-plane implementation with centralized JSONL logging, safe diagnostic bundles, bounded fair scheduling, WorkerManager heartbeat/lifecycle tracking, durable dispatch coordination and worker-loss watchdog recovery.
 - Added ADR-025: scheduler reconstruction must use durable task descriptors rather than runtime-memory guesses.
