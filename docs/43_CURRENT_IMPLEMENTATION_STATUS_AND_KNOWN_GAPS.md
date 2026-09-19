@@ -1,7 +1,7 @@
 # MTKrita Current Implementation Status and Known Gaps
 
 ## Status
-SSOT — Engineering Handoff Status v1.2
+SSOT — Engineering Handoff Status v1.3
 
 ## Purpose
 ป้องกันความสับสนระหว่างสิ่งที่ถูกกำหนดในเอกสารกับสิ่งที่ implement/verify แล้วจริง ณ จุด handoff
@@ -21,47 +21,62 @@ SSOT — Engineering Handoff Status v1.2
 - developer handoff/WBS/coding standards/acceptance matrix
 - golden-corpus specification, runbook, release checklist, maintenance guide, glossary and team execution playbook
 
-## Active M2 Development
-The active implementation line is now **PR #9 / branch `feat/m2-refresh`**, created directly from the latest SSOT baseline on `main`.
+## Active M2 Development — PR #9
+The active M2 implementation line is **PR #9 / branch `feat/m2-refresh`**.
 
-PR #8 / branch `feat/m2-transparent-border` is considered the legacy M2 implementation line and should not receive new development once PR #9 is verified. It remains temporarily open only as historical comparison/reference until the refresh branch proves equivalent-or-better behavior.
+PR #8 / `feat/m2-transparent-border` is closed without merge and superseded by PR #9.
 
-Implemented on PR #9 at the current handoff point includes:
-- configurable deterministic grid splitter
-- alpha-aware adaptive per-frame border detector/remover baseline
-- conservative top-left metadata/frame-number detector/remover baseline
-- source-phase transparency/background routing decision
-- provenance regression proving cleanup-generated alpha cannot redefine source transparency routing
-- alpha-content analysis using true foreground occupancy
-- smart-fit baseline with no upscale by default
-- LINE static validator baseline including rejection of fully transparent empty output
-- automated unit/component tests for grid, border, metadata, routing, content/fit and LINE validation
+Implemented and CI-verified on PR #9 includes:
+- exact configured 5×2 extraction
+- controlled scaled/non-divisible 5×2 extraction with method/confidence evidence
+- alpha-aware adaptive border detection/removal
+- full-edge border coverage measurement
+- same/near-border-color artwork contact risk → `REVIEW`, no destructive auto-crop
+- conservative top-left metadata/frame-number detection/removal
+- source-phase transparency/background routing captured before alpha-generating cleanup
+- provenance regression proving cleanup-generated alpha cannot redefine source routing
+- true foreground occupancy/content analysis
+- no-upscale smart fit
+- LINE static validation including rejection of fully transparent empty output
+- headless `FramePipeline` with structured findings/actions/evidence
+- extraction and routing lineage retained in `FrameResult`
+- atomic PNG exporter with SHA-256 and overwrite refusal
+- manifest/output lineage fields
+- synthetic 10-frame end-to-end gate covering split → border → metadata → route provenance → fit → validation → PNG export → manifest → source immutability
+- Windows CI run #129: Ruff PASS + pytest PASS
 
-## M2 Known Remaining Work
-- hybrid separator refinement for resized/non-divisible sheet geometry
-- border/artwork same-color topology hardening
-- metadata detector hardening against diverse badge styles
-- end-to-end `FramePipeline` orchestration
-- structured QA findings integrated with `FrameResult`
-- manifest/output lineage integration
-- transparent golden corpus gate
-- final CI green evidence for PR #9
+### Remaining M2 Gate Blocker
+- **Tier-B approved production/representative transparent corpus evidence**.
+
+Visual separator/hybrid refinement is not an automatic M2 blocker. It becomes required before gate closure only if approved corpus cases cannot be handled safely by exact/scaled deterministic extraction.
+
+## Active Platform Foundation — PR #10
+A separate control-plane implementation track has started at **PR #10 / branch `feat/platform-control-foundation`**.
+
+Phase 1 currently implements:
+- typed `PathRef` / `PathKind`
+- centralized `PathManager`
+- isolated job root / output / evidence / log / worker-scratch resolution
+- traversal/unsafe identifier rejection
+- workspace ownership validation
+- automated filesystem tests including non-ASCII path coverage
+- `docs/60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md`
+
+This track is intentionally separate from M2 image-processing work.
 
 ## Architecture Approved but Not Fully Implemented
-The following are authoritative architecture, not completed runtime features yet:
-- MainBoard control-plane composition
-- PathManager + typed resource references
+The following remain authoritative architecture with incomplete runtime implementation:
 - ResourceBroker + centralized shared-state commit
 - durable JobStore/checkpoints
+- MainBoard composition root
+- event/command envelope + correlation identifiers
 - worker process manager
 - task lease / attempt / stale-result rejection
 - multi-worker parallel scheduling
 - pause / stop / resume / startup reconciliation
 - centralized structured logging/event collection
 - diagnostic bundle generation
-- atomic artifact commit flow
-
-These capabilities should be implemented through the WBS before claiming M5/M6 production-automation readiness.
+- full atomic artifact promotion through ResourceBroker
 
 ## M3 Not Yet Complete
 Required opaque-background work still includes:
@@ -72,20 +87,18 @@ Required opaque-background work still includes:
 - confidence-driven REVIEW fallback
 - mixed transparent/opaque E2E
 
-## Current CI Note
-PR #9 CI has been started and must complete successfully before the refreshed M2 baseline is considered verified. Until CI is green, M2 remains `IN PROGRESS`.
+## Verification Note
+PR #9 currently has green automated CI evidence including the synthetic E2E gate. It must remain draft until the required Tier-B production/representative corpus evidence is approved or the governing gate is explicitly changed through SSOT.
 
 ## Important Handoff Warning
 Do not assume a documented capability is implemented merely because it appears in SSOT. Use this status document, GitHub Issues/PRs, tests, and current branch contents together to determine implementation state.
 
-## First Engineering Actions for Incoming Team
-1. continue PR #9 from `feat/m2-refresh`;
-2. obtain green Ruff + pytest CI evidence;
-3. complete remaining M2 work packages and golden-corpus evidence;
-4. merge only after gate criteria are met;
-5. close/supersede PR #8 after PR #9 is verified;
-6. implement M3 opaque pipeline;
-7. implement runtime-control architecture work packages before production batch milestone.
+## Current Engineering Priorities
+1. obtain/approve Tier-B M2 transparent corpus evidence;
+2. keep PR #9 green and merge only after M2 exit criteria are satisfied;
+3. continue PR #10 platform foundation with ResourceBroker/JobStore/MainBoard contracts;
+4. begin M3 opaque pipeline only against the approved source-transparency provenance contract;
+5. implement multi-worker/recovery work packages before claiming production batch readiness.
 
 ## Canonical References
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
@@ -94,7 +107,9 @@ Do not assume a documented capability is implemented merely because it appears i
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
 - `50_ENGINEERING_HANDOFF_CHECKLIST.md`
 - `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
+- `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
 - `58_SSOT_COVERAGE_AUDIT.md`
-- PR #9 (active)
-- PR #8 (legacy/superseded after verification)
+- PR #9 — active M2
+- PR #10 — active platform foundation
+- PR #8 — closed/superseded
 - Issues #2 and #3
