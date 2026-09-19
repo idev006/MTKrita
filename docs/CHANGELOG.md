@@ -1,5 +1,16 @@
 # Documentation Changelog
 
+## v0.7 — 2026-09-19
+- Extended platform control-plane implementation with centralized JSONL logging, safe diagnostic bundles, bounded fair scheduling, WorkerManager heartbeat/lifecycle tracking, durable dispatch coordination and worker-loss watchdog recovery.
+- Added ADR-025: scheduler reconstruction must use durable task descriptors rather than runtime-memory guesses.
+- Upgraded JobStore to schema v3 with explicit v1→v2→v3 migration and durable task descriptor/priority metadata.
+- Legacy v2 tasks without execution descriptors are explicitly non-reconstructable instead of receiving invented scheduling meaning.
+- Added `SchedulerReconstructor` and automated tests for restart eligibility, priority preservation, deferred queue capacity and unsupported descriptor rejection.
+- Added `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md` defining Windows spawn isolation, explicit command/event channels and non-pickle authoritative IPC.
+- Added versioned UTF-8 JSON worker IPC codec with schema/type/identity/size validation and automated protocol tests.
+- Updated Platform Foundation Implementation Status to v2.3 and documentation index accordingly.
+- Latest code verification for JobStore v3, scheduler reconstruction and JSON IPC passed Ruff + pytest.
+
 ## v0.6 — 2026-09-19
 - Implemented and documented the platform-control foundation track in PR #10.
 - Added PathManager typed resource ownership and ResourceBroker centralized artifact promotion.
