@@ -86,6 +86,16 @@ class TaskLeaseRegistry:
         del self._leases[task_id]
         return current
 
+    def discard(self, task_id: str, *, worker_id: str, attempt: int) -> TaskLease | None:
+        """Remove the matching runtime lease even when expired during recovery/watchdog cleanup."""
+        current = self._leases.get(task_id)
+        if current is None:
+            return None
+        if current.worker_id != worker_id or current.attempt != attempt:
+            raise ValueError("stale or non-authoritative task attempt")
+        del self._leases[task_id]
+        return current
+
     def expired(self) -> tuple[TaskLease, ...]:
         now = self._clock()
         return tuple(lease for lease in self._leases.values() if lease.lease_expires_at <= now)
