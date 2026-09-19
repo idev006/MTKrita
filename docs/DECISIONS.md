@@ -54,3 +54,18 @@ Krita is a manual-review/editor integration, not a mandatory runtime dependency 
 **Status:** Accepted
 
 Production Windows users should receive a standalone application/installer and must not be required to install Python/OpenCV/toolchains manually.
+
+## ADR-012 — Python Is the MTKrita Orchestration and Control Plane
+**Status:** Accepted
+
+Python coordinates the end-to-end sticker workflow, applies domain rules, selects processing routes/providers, enforces confidence thresholds and QA states, and records manifests/evidence. Python is not required to reimplement every lower-level image algorithm.
+
+## ADR-013 — Engine-Agnostic Provider Architecture
+**Status:** Accepted
+
+OpenCV, Pillow, ImageMagick or future ML providers may implement lower-level image-processing capabilities behind stable interfaces. MTKrita domain logic owns when and why a provider is used. Replacing a provider should not require rewriting the complete workflow where practical.
+
+## ADR-014 — Document-Driven SSOT Governs Implementation
+**Status:** Accepted
+
+Approved SSOT documents define product behavior, architecture, processing rules, acceptance criteria and release gates before or together with implementation. Source code and GitHub execution records must not silently redefine upstream requirements. Critical changes require synchronized requirement/design/test/traceability evidence before completion.
