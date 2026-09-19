@@ -1,5 +1,18 @@
 # Documentation Changelog
 
+## v0.9 — 2026-09-19
+- Accepted ADR-027: workers consume only control-plane-staged immutable inputs; raw external/user filesystem paths never become worker execution authority.
+- Added `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md` defining immutable job INPUT staging, strict M2 frame descriptors, worker scratch-only output, and MainBoard final publication.
+- Extended PathManager with typed `INPUT` references and job `inputs/` namespace.
+- Extended ResourceBroker with immutable input staging and verification using source-preserving copy, flush/fsync, SHA-256, byte size, overwrite refusal and atomic promotion.
+- Upgraded ExecuteTask payload to version 2 with explicit verified `inputs[]`; durable descriptors contain logical input identity/hash instead of external absolute paths.
+- Added strict `M2FrameTaskDescriptor` schema and `M2FrameTargetResolver`; unknown/path-like critical fields, invalid geometry/config/hash and non-PNG output names are rejected.
+- Added injectable `M2FrameTaskExecutor` adapter that verifies staged input, maps M2 PASS/AUTO_FIXED/REVIEW/FAIL to candidate outcomes and writes success PNG only to worker-private scratch.
+- Kept M2 image algorithms outside platform code; PR #9 remains the source of `process_frame`, `FramePipelineConfig` and PNG export implementation.
+- Added regression coverage for source preservation, input overwrite/hash/size failures, strict descriptor validation, trusted target resolution, tampered-input rejection and executor status mapping.
+- Windows CI checkpoint covering immutable input, ExecuteTask v2, strict M2 descriptor/target resolver and M2 executor adapter passed Ruff + pytest.
+- Updated path/resource architecture to v1.2, worker IPC spec to v1.3, task/result spec to v1.1 and platform status to v2.6.
+
 ## v0.8 — 2026-09-19
 - Accepted ADR-026: `ExecuteTask` is immutable and worker results remain candidates until durable control-plane acceptance.
 - Added `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md` defining exact candidate validation order, one-primary-artifact MVP cardinality, MainBoard-owned target resolution and ADR-024 success commitment.
