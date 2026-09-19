@@ -1,10 +1,10 @@
 # MTKrita Document-Driven SSOT Operating Model
 
 ## Status
-SSOT — Operating Model v1.1
+SSOT — Operating Model v1.2
 
 ## Purpose
-กำหนดวิธีทำงานของโครงการ MTKrita ให้เป็น **Document-Driven Project** ที่มี **Single Source of Truth (SSOT)** ชัดเจน โดยเอกสารที่ได้รับการอนุมัติเป็นตัวกำหนดสิ่งที่ต้องสร้าง วิธีตรวจรับ และเงื่อนไขที่ถือว่างานเสร็จ ไม่ใช่ให้โค้ดเป็นตัวสร้าง requirement ย้อนหลัง
+กำหนดวิธีทำงานของโครงการ MTKrita ให้เป็น **Document-Driven Project** ที่มี **Single Source of Truth (SSOT)** ชัดเจน โดยเอกสารที่ได้รับการอนุมัติเป็นตัวกำหนดสิ่งที่ต้องสร้าง วิธีตรวจรับ และเงื่อนไขที่ถือว่างานเสร็จ ไม่ใช่ให้โค้ดหรือบทสนทนาเป็นตัวสร้าง requirement ย้อนหลัง
 
 ## 1. Core Philosophy
 
@@ -121,6 +121,17 @@ Review order:
 ## 10. Team Knowledge Rule
 Project-relevant knowledge must not remain only in chat, meeting notes or individual understanding. Important decisions, requirements, assumptions, constraints, team responsibilities, workflows, diagrams, risks, findings and release evidence must be promoted into approved SSOT documents.
 
-## 11. Project Principle Summary
+## 11. Chat Communication Rule
+Chat is a coordination channel, not the project record.
+
+Default chat behavior:
+- communicate briefly and concisely;
+- show only the decision, high-level rationale, current status and next action unless detailed explanation is requested;
+- avoid duplicating long technical specifications already stored in project documents;
+- whenever a conversation introduces or changes project-relevant behavior, architecture, requirement, constraint, workflow, interface, configuration policy, risk, test rule or operational decision, update the appropriate SSOT document in the same work cycle.
+
+The authoritative detail shall live in the repository documents, not only in the chat transcript.
+
+## 12. Project Principle Summary
 
 > **MTKrita is a document-driven, SSOT-controlled, Python-orchestrated, engine-agnostic sticker-production automation system with measurable gates and auditable evidence.**
