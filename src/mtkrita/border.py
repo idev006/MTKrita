@@ -16,6 +16,8 @@ class BorderSide:
     offset: int = 0
     contact_fraction: float = 0.0
     contact_ranges: tuple[tuple[int, int], ...] = ()
+    visible_support: float = 1.0
+    color_purity: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,7 @@ class _InsetCandidate:
     color: tuple[int, int, int]
     coverage: float
     visible_fraction: float
+    color_purity: float
 
 
 def _distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
@@ -117,6 +120,12 @@ def _visible_fraction(samples: list[tuple[int, int, int] | None]) -> float:
     if not samples:
         return 0.0
     return sum(sample is not None for sample in samples) / len(samples)
+
+
+def _visible_color_purity(coverage: float, visible_fraction: float) -> float:
+    if visible_fraction <= 0:
+        return 0.0
+    return min(1.0, coverage / visible_fraction)
 
 
 def _matching_fraction(
@@ -215,17 +224,20 @@ def _detect_edge_side(
         color_tolerance,
         trim=trim,
     )
-    contact_risk = contact_fraction >= contact_fraction_threshold
+    visible_support = _visible_fraction(outer)
+    color_purity = _visible_color_purity(outer_coverage, visible_support)
 
     return BorderSide(
         side=side,
         thickness=thickness,
         color=outer_color,
         confidence=mean(coverages),
-        contact_risk=contact_risk,
+        contact_risk=contact_fraction >= contact_fraction_threshold,
         offset=0,
         contact_fraction=contact_fraction,
         contact_ranges=contact_ranges,
+        visible_support=visible_support,
+        color_purity=color_purity,
     )
 
 
@@ -243,6 +255,7 @@ def _find_inset_candidate(
         strip = _strip_samples(image, side, offset)
         visible = _visible_fraction(strip)
         color, coverage = _dominant_color(strip, search_tolerance)
+        purity = _visible_color_purity(coverage, visible)
         if visible < min_visible_fraction or coverage < min_candidate_coverage:
             continue
         candidates.append(
@@ -252,13 +265,19 @@ def _find_inset_candidate(
                 color=color,
                 coverage=coverage,
                 visible_fraction=visible,
+                color_purity=purity,
             )
         )
     if not candidates:
         return None
     return max(
         candidates,
-        key=lambda item: (item.coverage, item.visible_fraction, -item.offset),
+        key=lambda item: (
+            item.color_purity,
+            item.coverage,
+            item.visible_fraction,
+            -item.offset,
+        ),
     )
 
 
@@ -280,7 +299,7 @@ def _consensus_candidates(
         ranked.append(
             (
                 len(matched),
-                sum(candidate.coverage for candidate in matched.values()),
+                sum(candidate.color_purity for candidate in matched.values()),
                 matched,
             )
         )
@@ -342,19 +361,25 @@ def _build_inset_side(
         contact_tolerance,
         trim=trim,
     )
-    contact_risk = contact_fraction >= contact_fraction_threshold
 
+    support_score = min(1.0, candidate.visible_fraction / 0.85)
     consensus_bonus = 0.15 if consensus_side_count == 4 else 0.05
-    confidence = min(1.0, candidate.coverage + consensus_bonus)
+    structural_confidence = (
+        (0.75 * candidate.color_purity) + (0.25 * support_score) + consensus_bonus
+    )
+    confidence = min(1.0, structural_confidence)
+
     return BorderSide(
         side=candidate.side,
         thickness=thickness,
         color=candidate.color,
         confidence=confidence,
-        contact_risk=contact_risk,
+        contact_risk=contact_fraction >= contact_fraction_threshold,
         offset=start,
         contact_fraction=contact_fraction,
         contact_ranges=contact_ranges,
+        visible_support=candidate.visible_fraction,
+        color_purity=candidate.color_purity,
     )
 
 
