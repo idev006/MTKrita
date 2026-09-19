@@ -190,6 +190,21 @@ class JobStore:
             raise KeyError(job_id)
         return JobRecord(*row)
 
+    def list_jobs(self, *, states: tuple[str, ...] | None = None) -> tuple[JobRecord, ...]:
+        query = (
+            "SELECT job_id, state, generation, source_hash, config_hash, created_at, updated_at "
+            "FROM jobs"
+        )
+        parameters: tuple[Any, ...] = ()
+        if states:
+            placeholders = ",".join("?" for _ in states)
+            query += f" WHERE state IN ({placeholders})"
+            parameters = states
+        query += " ORDER BY created_at, job_id"
+        with self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return tuple(JobRecord(*row) for row in rows)
+
     def transition(
         self,
         job_id: str,
