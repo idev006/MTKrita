@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .artifact_commit import (
+    ArtifactCommitCoordinator,
+    ArtifactCommitJournal,
+    ArtifactCommitReconciler,
+)
 from .event_bus import InProcessEventBus
 from .job_lifecycle import JobLifecycleController
 from .job_store import JobStore
@@ -22,6 +27,9 @@ class MainBoard:
     leases: TaskLeaseRegistry
     lifecycle: JobLifecycleController
     recovery: StartupReconciler
+    artifact_journal: ArtifactCommitJournal
+    artifact_commits: ArtifactCommitCoordinator
+    artifact_recovery: ArtifactCommitReconciler
 
     @classmethod
     def compose(
@@ -32,12 +40,18 @@ class MainBoard:
         events: InProcessEventBus | None = None,
         leases: TaskLeaseRegistry | None = None,
     ) -> MainBoard:
+        resources = ResourceBroker(paths)
+        artifact_journal = ArtifactCommitJournal(jobs)
+        artifact_journal.initialize()
         return cls(
             paths=paths,
-            resources=ResourceBroker(paths),
+            resources=resources,
             jobs=jobs,
             events=events or InProcessEventBus(),
             leases=leases or TaskLeaseRegistry(),
             lifecycle=JobLifecycleController(jobs),
             recovery=StartupReconciler(jobs),
+            artifact_journal=artifact_journal,
+            artifact_commits=ArtifactCommitCoordinator(artifact_journal, resources),
+            artifact_recovery=ArtifactCommitReconciler(artifact_journal, resources, jobs),
         )
