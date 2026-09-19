@@ -16,7 +16,7 @@
 MVP รองรับ 2 rows × 5 columns = 10 frames แต่โครงสร้างต้อง configurable เพื่อรองรับ layout อื่นในอนาคต
 
 ### PR-004 Frame Extraction
-รองรับ fixed geometry, border/separator detection และ hybrid extraction
+รองรับ fixed geometry, border/separator detection และ hybrid extraction และต้องสามารถ export frame ที่แยกแล้วเป็น PNG รายเฟรมตามลำดับ deterministic
 
 ### PR-005 Transparency Analysis
 ต้องแยกได้ระหว่าง:
@@ -70,6 +70,31 @@ MVP รองรับ 2 rows × 5 columns = 10 frames แต่โครงส�
 
 ### PR-016 Exception-First Review UX
 UI ต้องทำให้ผู้ใช้ตรวจ `REVIEW/FAIL` เป็นหลัก และให้ preview source/mask/border-removal/final output ก่อนอนุมัติ operation ที่มีความเสี่ยง
+
+### PR-017 Frame Number / Sheet Metadata Removal
+หลัง split เป็น frame ระบบต้องสามารถตรวจและลบหมายเลขประจำเฟรมที่เป็น metadata ของ sheet เช่น `01`, `02`, `31`, `40` ได้
+
+ข้อกำหนด:
+- detection region ต้อง configurable และโดย default จำกัดอยู่บริเวณ metadata zone เช่นมุมซ้ายบน
+- ห้ามลบตัวเลข/ข้อความที่เป็นส่วนหนึ่งของ sticker artwork
+- automatic removal ต้องใช้ confidence threshold
+- ambiguity ต้องเป็น `REVIEW`
+- feature ต้องเปิด/ปิดได้ตาม profile
+
+### PR-018 Conditional Background Removal Routing
+ระบบต้องตรวจ meaningful transparency ก่อน background processing เสมอ
+
+- หาก frame มี meaningful transparent background อยู่แล้ว ให้ **SKIP background removal** โดย default และรักษา alpha/anti-aliased edges เดิม
+- หาก frame ไม่มี meaningful transparency หรือ fully opaque ให้ route เข้าสู่ opaque background-removal pipeline
+- ห้ามทำ segmentation ซ้ำบน transparent frame โดยไม่มี explicit reason/config
+- routing decision ต้องถูกบันทึกใน manifest/processing log
+
+### PR-019 Mandatory MVP Processing Contract
+ก่อนประกาศ MVP พร้อมใช้งาน ระบบต้องทำ workflow ขั้นต่ำนี้ได้ครบ:
+
+`Sticker Sheet → Split Frames → Remove Border → Remove Frame Number → Conditional Background Removal → PNG Export`
+
+รายละเอียด acceptance และ safety baseline ให้อ้างอิง `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md` ซึ่งเป็น release blocker สำหรับ MVP
 
 ## Non-functional Requirements
 
