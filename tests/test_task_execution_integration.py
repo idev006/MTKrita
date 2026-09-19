@@ -61,7 +61,6 @@ class ScratchWritingExecutor:
         data = b"integration-candidate"
         filename = "candidate.png"
         path = Path(request.scratch_path) / filename
-        path.mkdir(parents=True, exist_ok=True) if False else None
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return TaskCandidateResult(
