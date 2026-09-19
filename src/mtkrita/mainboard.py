@@ -17,6 +17,7 @@ from .recovery import StartupReconciler, StartupRecoveryCoordinator
 from .resource_broker import ResourceBroker
 from .scheduler_recovery import SchedulerReconstructor
 from .task_leases import TaskLeaseRegistry
+from .worker_events import WorkerEventRouter
 from .worker_manager import WorkerManager
 
 
@@ -32,6 +33,7 @@ class MainBoard:
     diagnostics: DiagnosticBundleBuilder
     leases: TaskLeaseRegistry
     workers: WorkerManager
+    worker_events: WorkerEventRouter
     scheduler_recovery: SchedulerReconstructor
     lifecycle: JobLifecycleController
     recovery: StartupReconciler
@@ -59,6 +61,7 @@ class MainBoard:
         event_bus = events or InProcessEventBus()
         log_sink = logs or JsonlLogSink(paths)
         log_sink.attach(event_bus)
+        worker_manager = workers or WorkerManager()
         return cls(
             paths=paths,
             resources=resources,
@@ -67,7 +70,8 @@ class MainBoard:
             logs=log_sink,
             diagnostics=DiagnosticBundleBuilder(paths, jobs),
             leases=leases or TaskLeaseRegistry(),
-            workers=workers or WorkerManager(),
+            workers=worker_manager,
+            worker_events=WorkerEventRouter(workers=worker_manager, events=event_bus),
             scheduler_recovery=SchedulerReconstructor(jobs),
             lifecycle=JobLifecycleController(jobs),
             recovery=recovery,
