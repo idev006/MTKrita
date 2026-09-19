@@ -10,6 +10,7 @@ from .artifact_commit import (
 from .event_bus import InProcessEventBus
 from .job_lifecycle import JobLifecycleController
 from .job_store import JobStore
+from .log_sink import JsonlLogSink
 from .path_manager import PathManager
 from .recovery import StartupReconciler, StartupRecoveryCoordinator
 from .resource_broker import ResourceBroker
@@ -24,6 +25,7 @@ class MainBoard:
     resources: ResourceBroker
     jobs: JobStore
     events: InProcessEventBus
+    logs: JsonlLogSink
     leases: TaskLeaseRegistry
     lifecycle: JobLifecycleController
     recovery: StartupReconciler
@@ -40,17 +42,22 @@ class MainBoard:
         jobs: JobStore,
         events: InProcessEventBus | None = None,
         leases: TaskLeaseRegistry | None = None,
+        logs: JsonlLogSink | None = None,
     ) -> MainBoard:
         resources = ResourceBroker(paths)
         artifact_journal = ArtifactCommitJournal(jobs)
         artifact_journal.initialize()
         recovery = StartupReconciler(jobs)
         artifact_recovery = ArtifactCommitReconciler(artifact_journal, resources, jobs)
+        event_bus = events or InProcessEventBus()
+        log_sink = logs or JsonlLogSink(paths)
+        log_sink.attach(event_bus)
         return cls(
             paths=paths,
             resources=resources,
             jobs=jobs,
-            events=events or InProcessEventBus(),
+            events=event_bus,
+            logs=log_sink,
             leases=leases or TaskLeaseRegistry(),
             lifecycle=JobLifecycleController(jobs),
             recovery=recovery,
