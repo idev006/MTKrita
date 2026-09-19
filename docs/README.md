@@ -4,20 +4,24 @@
 For a new development team, begin with:
 1. `42_DEVELOPER_START_HERE.md` — onboarding entry point
 2. `37_DEVELOPER_HANDOFF_PACKAGE.md` — handoff package and project rules
-3. `41_M2_M3_IMPLEMENTATION_PLAN.md` — near-term implementation sequence
-4. `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md` — actionable work packages
-5. `40_ACCEPTANCE_TEST_MATRIX.md` — acceptance evidence required
-6. `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md` — coding/repository rules
+3. `50_ENGINEERING_HANDOFF_CHECKLIST.md` — readiness checklist before implementation
+4. `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md` — reference package/module architecture
+5. `41_M2_M3_IMPLEMENTATION_PLAN.md` — near-term implementation sequence
+6. `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md` — actionable work packages
+7. `40_ACCEPTANCE_TEST_MATRIX.md` — acceptance evidence required
+8. `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md` — verification corpus requirements
+9. `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md` — coding/repository rules
+10. `58_SSOT_COVERAGE_AUDIT.md` — documentation readiness audit
 
 ## SSOT Rule
 MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hierarchy defined in `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`.
 
 ## Master Control
-- `MASTER_PROJECT_CONTROL.md` — top-level project control, goals, milestones, gates
-- `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md` — SSOT operating model
-- `00_TEAM_GOVERNANCE.md` — governance, RACI, phase gates, change control
-- `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md` — roles, competencies, duties, authority, deliverables
-- `01_PROJECT_CHARTER.md` — vision, purpose and success definition
+- `MASTER_PROJECT_CONTROL.md`
+- `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`
+- `00_TEAM_GOVERNANCE.md`
+- `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`
+- `01_PROJECT_CHARTER.md`
 
 ## Requirements / Scope
 - `02_PRODUCT_REQUIREMENTS.md`
@@ -45,6 +49,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`
 - `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`
 - `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
+- `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
@@ -60,6 +65,8 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `20_REQUIREMENTS_TRACEABILITY_MATRIX.md`
 - `22_DEFINITION_OF_DONE.md`
 - `40_ACCEPTANCE_TEST_MATRIX.md`
+- `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
+- `54_RELEASE_AND_SIGNOFF_CHECKLIST.md`
 
 ## UX / Distribution / Audit
 - `16_UI_UX_SPECIFICATION.md`
@@ -67,18 +74,24 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `19_AUDIT_AND_COMPLIANCE_PLAN.md`
 - `11_RISK_REGISTER.md`
 - `12_SOURCE_AND_LICENSE_NOTES.md`
+- `58_SSOT_COVERAGE_AUDIT.md`
 
 ## Project Execution
 - `08_MVP_SCOPE_AND_ROADMAP.md`
 - `21_PROJECT_EXECUTION_PLAN.md`
 - `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md`
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
+- `57_TEAM_EXECUTION_PLAYBOOK.md`
 
-## Engineering / Handoff
+## Engineering / Handoff / Operations
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
 - `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md`
 - `42_DEVELOPER_START_HERE.md`
 - `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
+- `50_ENGINEERING_HANDOFF_CHECKLIST.md`
+- `53_OPERATIONAL_RUNBOOK.md`
+- `55_PROJECT_GLOSSARY_AND_NAMING.md`
+- `56_MAINTENANCE_AND_EXTENSION_GUIDE.md`
 
 ## Configuration
 - `configs/line_static.toml` — canonical LINE static export profile
