@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -19,7 +19,7 @@ def create_manifest(input_path: str | Path, config_text: str = "") -> JobManifes
     inspection = inspect_image(input_path)
     return JobManifest(
         job_id=str(uuid4()),
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
         input_file=str(inspection.path),
         input_hash=inspection.sha256,
         engine_version=__version__,
