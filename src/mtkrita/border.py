@@ -12,6 +12,7 @@ class BorderSide:
     thickness: int
     color: tuple[int, int, int]
     confidence: float
+    contact_risk: bool = False
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,13 @@ class BorderDetection:
             if side is not None
         ]
         return mean(values) if values else 0.0
+
+    @property
+    def contact_risk(self) -> bool:
+        return any(
+            side is not None and side.contact_risk
+            for side in (self.left, self.top, self.right, self.bottom)
+        )
 
 
 def _distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
@@ -89,6 +97,19 @@ def _strip_samples(
     return samples
 
 
+def _matching_fraction(
+    samples: list[tuple[int, int, int] | None],
+    color: tuple[int, int, int],
+    tolerance: int,
+) -> float:
+    if not samples:
+        return 0.0
+    matches = sum(
+        sample is not None and _distance(sample, color) <= tolerance for sample in samples
+    )
+    return matches / len(samples)
+
+
 def _detect_side(
     image: Image.Image,
     side: str,
@@ -96,6 +117,7 @@ def _detect_side(
     max_thickness: int,
     color_tolerance: int,
     min_coverage: float,
+    contact_fraction_threshold: float,
 ) -> BorderSide | None:
     outer = _strip_samples(image, side, 0)
     outer_color, outer_coverage = _dominant_color(outer, color_tolerance)
@@ -114,7 +136,22 @@ def _detect_side(
 
     if thickness == 0:
         return None
-    return BorderSide(side=side, thickness=thickness, color=outer_color, confidence=mean(coverages))
+
+    inner = _strip_samples(image, side, thickness)
+    trim = min(thickness, max(0, len(inner) // 4))
+    if trim and len(inner) > 2 * trim:
+        inner = inner[trim:-trim]
+    contact_risk = (
+        _matching_fraction(inner, outer_color, color_tolerance) >= contact_fraction_threshold
+    )
+
+    return BorderSide(
+        side=side,
+        thickness=thickness,
+        color=outer_color,
+        confidence=mean(coverages),
+        contact_risk=contact_risk,
+    )
 
 
 def detect_border(
@@ -123,6 +160,7 @@ def detect_border(
     max_fraction: float = 0.12,
     color_tolerance: int = 8,
     min_coverage: float = 0.985,
+    contact_fraction_threshold: float = 0.05,
 ) -> BorderDetection:
     if not 0 < max_fraction <= 0.5:
         raise ValueError("max_fraction must be in (0, 0.5]")
@@ -130,6 +168,8 @@ def detect_border(
         raise ValueError("color_tolerance must be between 0 and 255")
     if not 0 < min_coverage <= 1:
         raise ValueError("min_coverage must be in (0, 1]")
+    if not 0 <= contact_fraction_threshold <= 1:
+        raise ValueError("contact_fraction_threshold must be between 0 and 1")
 
     rgba = image.convert("RGBA")
     max_thickness = max(1, int(min(rgba.size) * max_fraction))
@@ -137,6 +177,7 @@ def detect_border(
         "max_thickness": max_thickness,
         "color_tolerance": color_tolerance,
         "min_coverage": min_coverage,
+        "contact_fraction_threshold": contact_fraction_threshold,
     }
     return BorderDetection(
         left=_detect_side(rgba, "left", **shared),
@@ -154,6 +195,8 @@ def remove_border(
 ) -> Image.Image:
     if detection.detected and detection.confidence < auto_threshold:
         raise ValueError("border confidence below automatic removal threshold")
+    if detection.contact_risk:
+        raise ValueError("border/artwork contact risk requires review")
 
     left = detection.left.thickness if detection.left else 0
     top = detection.top.thickness if detection.top else 0
