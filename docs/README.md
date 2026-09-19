@@ -54,6 +54,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
 - `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
 - `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
+- `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
@@ -100,6 +101,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `56_MAINTENANCE_AND_EXTENSION_GUIDE.md`
 - `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md`
 - `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
+- `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
 
 ## Configuration
 - `configs/line_static.toml` — canonical LINE static export profile
@@ -123,4 +125,6 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - Structured logs, checkpoints and durable state are first-class architecture requirements.
 - Scheduler runtime memory is disposable; restart reconstruction uses durable task descriptors and must not guess legacy task meaning.
 - Worker IPC uses explicit validated schemas; process transport must not leak critical business rules into worker or UI layers.
+- ExecuteTask is immutable; worker results are candidates until durable MainBoard authority accepts them.
+- A worker never selects final output destination or bypasses ADR-024 artifact commitment.
 - Critical code must be designed for headless automated testing with injectable/replaceable dependencies and permanent regression coverage for reproducible defects.
