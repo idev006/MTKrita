@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,17 @@ class TaskRecord:
     lease_expires_at: str | None
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class TaskDescriptorRecord:
+    task_id: str
+    job_id: str
+    priority: int
+    descriptor_version: int
+    descriptor: dict[str, Any]
+    reconstructable: bool
+    created_at: str
 
 
 @dataclass(frozen=True)
@@ -69,6 +80,9 @@ class JobStore:
                 if version == 1:
                     self._migrate_v1_to_v2(connection)
                     version = 2
+                if version == 2:
+                    self._migrate_v2_to_v3(connection)
+                    version = 3
                 if version != SCHEMA_VERSION:
                     raise RuntimeError("incompatible JobStore schema version")
                 connection.commit()
@@ -140,6 +154,38 @@ class JobStore:
         )
         connection.execute(
             "UPDATE metadata SET value = '2' WHERE key = 'schema_version'"
+        )
+
+    @staticmethod
+    def _migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS task_descriptors (
+                task_id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                priority INTEGER NOT NULL,
+                descriptor_version INTEGER NOT NULL,
+                descriptor_json TEXT NOT NULL,
+                reconstructable INTEGER NOT NULL CHECK(reconstructable IN (0, 1)),
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(task_id) REFERENCES tasks(task_id),
+                FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_task_descriptors_job
+                ON task_descriptors(job_id, priority, task_id);
+            """
+        )
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO task_descriptors(
+                task_id, job_id, priority, descriptor_version,
+                descriptor_json, reconstructable, created_at
+            )
+            SELECT task_id, job_id, 20, 0, '{}', 0, created_at FROM tasks
+            """
+        )
+        connection.execute(
+            "UPDATE metadata SET value = '3' WHERE key = 'schema_version'"
         )
 
     def create_job(
@@ -246,8 +292,22 @@ class JobStore:
                 raise
         return self.get_job(job_id)
 
-    def create_task(self, task_id: str, *, job_id: str) -> TaskRecord:
+    def create_task(
+        self,
+        task_id: str,
+        *,
+        job_id: str,
+        priority: int = 20,
+        descriptor: dict[str, Any] | None = None,
+        descriptor_version: int = 1,
+    ) -> TaskRecord:
+        if not isinstance(priority, int):
+            raise ValueError("priority must be an integer")
+        if descriptor_version <= 0:
+            raise ValueError("descriptor_version must be positive")
         now = self._timestamp()
+        descriptor_payload = descriptor or {}
+        reconstructable = descriptor is not None
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -260,6 +320,23 @@ class JobStore:
                     """,
                     (task_id, job_id, now, now),
                 )
+                connection.execute(
+                    """
+                    INSERT INTO task_descriptors(
+                        task_id, job_id, priority, descriptor_version,
+                        descriptor_json, reconstructable, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        job_id,
+                        priority,
+                        descriptor_version,
+                        json.dumps(descriptor_payload, ensure_ascii=False, sort_keys=True),
+                        int(reconstructable),
+                        now,
+                    ),
+                )
                 self._append_event(
                     connection,
                     job_id=job_id,
@@ -268,7 +345,12 @@ class JobStore:
                     to_state="PENDING",
                     generation=0,
                     occurred_at=now,
-                    detail={"task_id": task_id},
+                    detail={
+                        "task_id": task_id,
+                        "priority": priority,
+                        "descriptor_version": descriptor_version,
+                        "reconstructable": reconstructable,
+                    },
                 )
                 connection.commit()
             except Exception:
@@ -289,6 +371,68 @@ class JobStore:
         if row is None:
             raise KeyError(task_id)
         return TaskRecord(*row)
+
+    def get_task_descriptor(self, task_id: str) -> TaskDescriptorRecord:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT task_id, job_id, priority, descriptor_version,
+                       descriptor_json, reconstructable, created_at
+                FROM task_descriptors WHERE task_id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(task_id)
+        return TaskDescriptorRecord(
+            task_id=row[0],
+            job_id=row[1],
+            priority=row[2],
+            descriptor_version=row[3],
+            descriptor=json.loads(row[4]),
+            reconstructable=bool(row[5]),
+            created_at=row[6],
+        )
+
+    def list_reconstructable_tasks(
+        self,
+        job_id: str,
+        *,
+        states: tuple[str, ...] = ("PENDING", "INTERRUPTED"),
+    ) -> tuple[tuple[TaskRecord, TaskDescriptorRecord], ...]:
+        if not states:
+            return ()
+        placeholders = ",".join("?" for _ in states)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    t.task_id, t.job_id, t.state, t.generation, t.attempt,
+                    t.worker_id, t.lease_expires_at, t.created_at, t.updated_at,
+                    d.priority, d.descriptor_version, d.descriptor_json,
+                    d.reconstructable, d.created_at
+                FROM tasks t
+                JOIN task_descriptors d ON d.task_id = t.task_id
+                WHERE t.job_id = ? AND t.state IN ({placeholders})
+                  AND d.reconstructable = 1
+                ORDER BY d.priority, t.task_id
+                """,
+                (job_id, *states),
+            ).fetchall()
+        results: list[tuple[TaskRecord, TaskDescriptorRecord]] = []
+        for row in rows:
+            task = TaskRecord(*row[:9])
+            descriptor = TaskDescriptorRecord(
+                task_id=row[0],
+                job_id=row[1],
+                priority=row[9],
+                descriptor_version=row[10],
+                descriptor=json.loads(row[11]),
+                reconstructable=bool(row[12]),
+                created_at=row[13],
+            )
+            results.append((task, descriptor))
+        return tuple(results)
 
     def assign_task(
         self,
