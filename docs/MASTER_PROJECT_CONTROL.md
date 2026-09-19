@@ -1,7 +1,7 @@
 # MTKrita Master Project Control
 
 ## Status
-SSOT — Project Control Baseline v1.5
+SSOT — Project Control Baseline v1.6
 
 ## Purpose
 เอกสารควบคุมระดับบนสุดของโครงการ MTKrita เชื่อม Vision → Goals → Objectives → Mandatory Workflow → Workstreams → Milestones → Quality Gates → Release Criteria และป้องกัน scope drift
@@ -29,9 +29,10 @@ MTKrita เป็น **Document-Driven Project with SSOT** และใช้ **
 - **G-08 Developer Handoff Readiness** — ทีมพัฒนาต้องสามารถเริ่มงานจาก SSOT ได้โดยไม่ต้อง reconstruct intent จากบทสนทนา
 - **G-09 Interface-First Extensibility** — orchestrator/domain layer ต้องพึ่ง provider contracts ไม่พึ่ง concrete engine implementations
 - **G-10 Configuration Consistency** — TOML เป็น canonical human-maintained configuration format และ effective config ต้อง validate/hash ได้
-- **G-11 Centralized Resource Safety** — path และ shared mutable resource ต้องผ่าน PathManager/ResourceBroker แทนการเข้าถึงแบบกระจาย
+- **G-11 Centralized Resource Safety** — path และ shared mutable resource ต้องผ่าน PathManager/ResourceBroker
 - **G-12 Parallel Production** — รองรับ batch + multi-worker parallel execution โดย worker แยกกันและ shared-state commitment ถูกควบคุมจากส่วนกลาง
 - **G-13 Operational Resilience** — pause/stop/resume/retry/recover/checkpoint/log/diagnostic เป็น first-class system behavior
+- **G-14 Verification Readiness** — golden corpus, acceptance matrix, release sign-off และ operational runbook ต้องพร้อมก่อน milestone gate ที่เกี่ยวข้อง
 
 ## 3. Mandatory Minimum Objectives
 MVP ต้องพิสูจน์ได้ว่า:
@@ -51,6 +52,7 @@ MVP ต้องพิสูจน์ได้ว่า:
 14. batch/multi-worker execution ต้องป้องกัน stale/duplicate worker result จากการ overwrite authoritative state
 15. system restart ต้อง reconcile incomplete work และสามารถ resume จาก safe checkpoint ได้
 16. structured logs + stable error codes + correlation identifiers ต้องเพียงพอสำหรับ diagnosis
+17. target milestone ต้องมี acceptance/golden-corpus evidence และ release/sign-off record ตาม gate
 
 ## 4. Mandatory End-to-End Workflow
 ```text
@@ -89,16 +91,14 @@ Authoritative workflow detail: `27_END_TO_END_WORKFLOW_SPEC.md`.
 - Concrete providers are composed at the system edge through a registry/factory.
 - Provider-specific objects must not leak into stable domain contracts without wrappers.
 - TOML is the canonical human-maintained configuration format.
-- Python 3.11+ uses `tomllib` for TOML read operations.
-- JSON remains acceptable for machine-generated manifests/evidence.
 - Runtime paths participating in the application contract are resolved through `PathManager` or typed path refs.
 - MainBoard/control-plane services coordinate jobs/workers/resources; MainBoard is not a monolithic God Object.
 - Workers perform isolated computation and may use only immutable inputs + private scratch; they do not mutate shared job state/final outputs directly.
 - Shared-state commitment is serialized/transactional through MainBoard-owned services such as ResourceBroker/JobStore.
-- worker result acceptance uses task attempt/lease identity; stale late results are rejected.
-- durable checkpoints, startup reconciliation, structured logs and diagnostic evidence are architectural requirements.
+- Worker result acceptance uses task attempt/lease identity; stale late results are rejected.
+- Durable checkpoints, startup reconciliation, structured logs and diagnostic evidence are architectural requirements.
 
-References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md` through `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`, ADR-015 through ADR-020.
+References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md` through `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`, ADR-015 through ADR-020.
 
 ## 6. Scope Boundaries
 ### Must-have before MVP release
@@ -160,52 +160,31 @@ Changes affecting split/crop, border, metadata, alpha/background, quality, dimen
 5. changelog/evidence update
 6. QA review before release
 
-## 12. Behavioral Model SSOT
-- `27_END_TO_END_WORKFLOW_SPEC.md`
-- `28_USE_CASE_SPECIFICATION.md`
-- `29_UML_SYSTEM_MODEL.md`
-- `30_SEQUENCE_DIAGRAMS.md`
-- `31_STATE_MACHINE_SPEC.md`
-- `32_DEPLOYMENT_AND_RUNTIME_ARCHITECTURE.md`
-- `33_ERROR_RECOVERY_AND_IDEMPOTENCY_SPEC.md`
-- `34_DATA_FLOW_AND_ARTIFACT_LIFECYCLE.md`
-- `35_INTERFACE_AND_STAGE_CONTRACTS.md`
-- `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
-- `44_PROVIDER_INTERFACE_ARCHITECTURE.md`
-- `45_TOML_CONFIGURATION_SPEC.md`
-- `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`
-- `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`
-- `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`
-- `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
-
-## 13. Developer Handoff SSOT
-Incoming development teams must begin with:
+## 12. Developer Handoff Package
+Development teams begin with:
 - `42_DEVELOPER_START_HERE.md`
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
+- `50_ENGINEERING_HANDOFF_CHECKLIST.md`
+- `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
 - `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md`
-- `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md`
-- `40_ACCEPTANCE_TEST_MATRIX.md`
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
+- `40_ACCEPTANCE_TEST_MATRIX.md`
+- `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
+- `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md`
 - `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
 
+Operations/release/maintenance references:
+- `53_OPERATIONAL_RUNBOOK.md`
+- `54_RELEASE_AND_SIGNOFF_CHECKLIST.md`
+- `55_PROJECT_GLOSSARY_AND_NAMING.md`
+- `56_MAINTENANCE_AND_EXTENSION_GUIDE.md`
+- `57_TEAM_EXECUTION_PLAYBOOK.md`
+- `58_SSOT_COVERAGE_AUDIT.md`
+
+## 13. Documentation Handoff Status
+`58_SSOT_COVERAGE_AUDIT.md` records **READY FOR DEVELOPMENT HANDOFF**. This status means documentation is sufficient to continue implementation; it does not mean the software itself is production-ready.
+
 ## 14. Project Control References
-- `00_TEAM_GOVERNANCE.md`
-- `01_PROJECT_CHARTER.md`
-- `02_PRODUCT_REQUIREMENTS.md`
-- `03_SYSTEM_ARCHITECTURE.md`
-- `04_IMAGE_PROCESSING_PIPELINE.md`
-- `06_QA_RULEBOOK.md`
-- `09_DATA_MODELS_AND_CONFIG.md`
-- `13_QUALITY_MANAGEMENT_PLAN.md`
-- `14_SOFTWARE_TEST_STRATEGY.md`
-- `20_REQUIREMENTS_TRACEABILITY_MATRIX.md`
-- `21_PROJECT_EXECUTION_PLAN.md`
-- `22_DEFINITION_OF_DONE.md`
-- `23_SUPPORTED_INPUT_ARCHETYPES.md`
-- `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md`
-- `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`
-- `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`
-- `27_END_TO_END_WORKFLOW_SPEC.md` through `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
-- `DECISIONS.md`
+See `docs/README.md` for the complete indexed SSOT set.
 
 This document governs project direction; lower-level SSOT documents provide detailed behavior, design, execution and evidence rules.
