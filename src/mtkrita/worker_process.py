@@ -69,6 +69,7 @@ class ProcessWorkerSession:
     handle: ProcessWorkerHandle
     command_sender: JsonMessageSender
     event_receiver: JsonMessageReceiver
+    command_connection: Connection
     event_connection: Connection
 
     def send_command(self, message: MessageEnvelope) -> None:
@@ -88,7 +89,12 @@ class ProcessWorkerSession:
             raise WorkerProcessError("worker event channel produced a non-EVENT message")
         return message
 
+    def wait_for_exit(self, timeout_seconds: float | None = None) -> bool:
+        self.handle.join(timeout_seconds)
+        return not self.handle.is_alive()
+
     def close(self) -> None:
+        self.command_connection.close()
         self.event_connection.close()
 
 
@@ -130,6 +136,7 @@ class WindowsSpawnWorkerFactory:
             ),
             command_sender=command_sender,
             event_receiver=JsonMessageReceiver(event_receiver_connection, self._codec),
+            command_connection=command_sender_connection,
             event_connection=event_receiver_connection,
         )
         session.send_command(
