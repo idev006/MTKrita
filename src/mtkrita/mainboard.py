@@ -7,6 +7,7 @@ from .artifact_commit import (
     ArtifactCommitJournal,
     ArtifactCommitReconciler,
 )
+from .diagnostics import DiagnosticBundleBuilder
 from .event_bus import InProcessEventBus
 from .job_lifecycle import JobLifecycleController
 from .job_store import JobStore
@@ -26,6 +27,7 @@ class MainBoard:
     jobs: JobStore
     events: InProcessEventBus
     logs: JsonlLogSink
+    diagnostics: DiagnosticBundleBuilder
     leases: TaskLeaseRegistry
     lifecycle: JobLifecycleController
     recovery: StartupReconciler
@@ -58,6 +60,7 @@ class MainBoard:
             jobs=jobs,
             events=event_bus,
             logs=log_sink,
+            diagnostics=DiagnosticBundleBuilder(paths, jobs),
             leases=leases or TaskLeaseRegistry(),
             lifecycle=JobLifecycleController(jobs),
             recovery=recovery,
