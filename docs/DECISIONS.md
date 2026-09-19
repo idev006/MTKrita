@@ -192,3 +192,27 @@ Crash/restart rules:
 - reconciliation is idempotent and records its decision in durable evidence.
 
 This protocol is a recovery-oriented substitute for an impossible cross-filesystem/database ACID transaction. Final file existence alone is never sufficient evidence that a task or job succeeded.
+
+## ADR-025 — Scheduler Reconstruction Uses Durable Task Descriptors
+**Status:** Accepted
+
+The in-memory scheduler is disposable runtime state. After application restart, pause/resume, or worker-loss recovery, scheduling decisions shall be rebuilt from a **durable task descriptor** rather than guessed from filenames, completion order, UI state, or hard-coded defaults.
+
+Required durable scheduling metadata includes at minimum:
+- `task_id` and `job_id`;
+- scheduler priority;
+- immutable task descriptor payload sufficient to recreate the dispatch contract;
+- descriptor/schema version;
+- the existing durable task state, generation and attempt identity.
+
+Rules:
+- task descriptors are written by the control plane when the durable task is created;
+- scheduler priority is part of durable task identity/evidence and must survive restart;
+- PENDING and eligible INTERRUPTED tasks may be reconstructed into the scheduler queue;
+- RUNNING tasks are never reconstructed as runnable until startup reconciliation has resolved their prior attempt;
+- SUCCEEDED/FAILED/REVIEW terminal tasks are not rescheduled merely because the process restarted;
+- reconstruction must preserve deterministic ordering for equal-priority work using stable task identity/order metadata;
+- the scheduler remains a replaceable in-memory policy component; JobStore remains the durable authority;
+- schema evolution for durable descriptors requires explicit migration tests and must not silently invent missing critical fields.
+
+This decision enables pause/resume/restart without depending on process memory and prevents recovery from changing task priority or execution meaning.
