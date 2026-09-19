@@ -1,8 +1,16 @@
 import copy
+from pathlib import Path
 
 import pytest
 
-from mtkrita.m2_task_descriptor import M2TaskDescriptorError, parse_m2_frame_descriptor
+from mtkrita.job_store import TaskDescriptorRecord, TaskRecord
+from mtkrita.m2_task_descriptor import (
+    M2FrameTargetResolver,
+    M2TaskDescriptorError,
+    parse_m2_frame_descriptor,
+)
+from mtkrita.path_manager import PathKind, PathManager
+from mtkrita.worker_tasks import ProvisionalArtifact
 
 
 def _descriptor() -> dict[str, object]:
@@ -38,6 +46,76 @@ def test_m2_descriptor_parses_exact_production_schema() -> None:
     assert parsed.extraction_rect == (0, 0, 512, 512)
     assert parsed.pipeline_config.target_width == 370
     assert parsed.pipeline_config.remove_metadata is True
+
+
+def test_m2_target_resolver_uses_validated_logical_output_name(tmp_path: Path) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    task = TaskRecord(
+        task_id="task-1",
+        job_id="job-1",
+        state="RUNNING",
+        generation=1,
+        attempt=1,
+        worker_id="worker-1",
+        lease_expires_at=None,
+        created_at="",
+        updated_at="",
+    )
+    descriptor = TaskDescriptorRecord(
+        task_id="task-1",
+        job_id="job-1",
+        priority=20,
+        descriptor_version=1,
+        descriptor=_descriptor(),
+        reconstructable=True,
+        created_at="",
+    )
+    artifact = ProvisionalArtifact(filename="candidate.png", sha256="b" * 64, byte_size=1)
+
+    target = M2FrameTargetResolver(paths).resolve(
+        task=task,
+        descriptor=descriptor,
+        artifact=artifact,
+    )
+
+    assert target.kind == PathKind.OUTPUT
+    assert target.job_id == "job-1"
+    assert target.worker_id is None
+    assert target.path == paths.output("job-1", "01.png").path
+
+
+def test_m2_target_resolver_rejects_descriptor_identity_mismatch(tmp_path: Path) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    task = TaskRecord(
+        task_id="task-1",
+        job_id="job-1",
+        state="RUNNING",
+        generation=1,
+        attempt=1,
+        worker_id="worker-1",
+        lease_expires_at=None,
+        created_at="",
+        updated_at="",
+    )
+    descriptor = TaskDescriptorRecord(
+        task_id="other-task",
+        job_id="job-1",
+        priority=20,
+        descriptor_version=1,
+        descriptor=_descriptor(),
+        reconstructable=True,
+        created_at="",
+    )
+    artifact = ProvisionalArtifact(filename="candidate.png", sha256="b" * 64, byte_size=1)
+
+    with pytest.raises(M2TaskDescriptorError, match="identity mismatch"):
+        M2FrameTargetResolver(paths).resolve(
+            task=task,
+            descriptor=descriptor,
+            artifact=artifact,
+        )
 
 
 def test_m2_descriptor_rejects_unknown_or_path_like_fields() -> None:
