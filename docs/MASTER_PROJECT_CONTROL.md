@@ -1,10 +1,21 @@
 # MTKrita Master Project Control
 
 ## Status
-SSOT — Project Control Baseline v1.0
+SSOT — Project Control Baseline v1.1
 
 ## Purpose
 เอกสารนี้เป็นเอกสารควบคุมระดับบนสุดของโครงการ MTKrita เพื่อเชื่อมโยง Vision → Goals → Objectives → Mandatory Workflow → Workstreams → Milestones → Quality Gates → Release Criteria ให้เป็นสายเดียวกัน และป้องกัน scope drift ระหว่างการพัฒนา
+
+## Operating Principle
+MTKrita เป็น **Document-Driven Project with SSOT** และใช้ **Python เป็น Orchestration / Control Plane** ของระบบ
+
+กฎหลัก:
+
+> **Document first, implementation second, evidence always.**
+
+เอกสารที่ได้รับการอนุมัติเป็นตัวกำหนด behavior, architecture, acceptance criteria และ gate ของโครงการ ส่วน GitHub Issues/PRs และ source code เป็น execution artifacts ที่ต้องสอดคล้องกับ SSOT
+
+รายละเอียด: `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`
 
 ---
 
@@ -30,6 +41,9 @@ SSOT — Project Control Baseline v1.0
 ### G-05 Production Readiness
 รองรับ batch production และ Windows 11 distribution โดยผู้ใช้ไม่ต้องติดตั้ง Python/developer toolchain
 
+### G-06 Engine Independence
+ใช้ open-source/proven processing engines ผ่าน provider interfaces โดยไม่ผูก domain workflow เข้ากับ engine ใด engine หนึ่งอย่างถาวร
+
 ---
 
 ## 3. Mandatory Minimum Objectives
@@ -43,6 +57,7 @@ MVP ต้องพิสูจน์ได้ว่า:
 6. Ambiguous destructive case ต้องกลายเป็น `REVIEW`
 7. Source file ต้องไม่ถูก overwrite และ source hash ต้องคงเดิม
 8. Output PNG ทุกไฟล์ต้อง trace กลับไปยัง source sheet/frame ได้
+9. Critical implementation ทุกชิ้นต้อง trace กลับไปยัง SSOT requirement/design/test ได้
 
 รายละเอียดทางเทคนิค: `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md`
 
@@ -83,6 +98,8 @@ PNG Export
         ↓
 Manifest / Evidence / Package
 ```
+
+Python orchestrator controls stage order, routing, provider selection, confidence policy and evidence collection.
 
 ---
 
@@ -163,14 +180,14 @@ No milestone may be marked complete solely because code exists; objective eviden
 
 ## 9. Priority Rule
 
-`Content Safety > Mandatory MVP Contract > Deterministic Correctness > LINE Compliance > Usability > Throughput > Advanced AI`
+`Content Safety > Mandatory MVP Contract > SSOT Compliance > Deterministic Correctness > LINE Compliance > Usability > Throughput > Advanced AI`
 
 When tradeoffs occur, this order governs decisions unless Project Director approves a documented exception.
 
 ---
 
 ## 10. Change Control
-Any change affecting crop, split, border removal, metadata removal, alpha/background removal, image quality, output dimensions or destructive behavior requires:
+Any change affecting crop, split, border removal, metadata removal, alpha/background removal, image quality, output dimensions, destructive behavior, provider architecture or orchestration behavior requires:
 
 1. requirement review/update
 2. ADR if architectural
@@ -178,6 +195,8 @@ Any change affecting crop, split, border removal, metadata removal, alpha/backgr
 4. traceability update
 5. changelog/update evidence
 6. QA review before release
+
+Implementation must not become the de facto specification without SSOT synchronization.
 
 ---
 
@@ -195,5 +214,7 @@ Any change affecting crop, split, border removal, metadata removal, alpha/backgr
 - `22_DEFINITION_OF_DONE.md`
 - `23_SUPPORTED_INPUT_ARCHETYPES.md`
 - `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md`
+- `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`
+- `DECISIONS.md`
 
 This document governs project direction; lower-level documents provide technical detail and evidence.
