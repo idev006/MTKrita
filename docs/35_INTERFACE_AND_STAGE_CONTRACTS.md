@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.7
+SSOT — Stage Contract Baseline v1.8
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -86,14 +86,22 @@ Every replaceable provider should expose:
 **Input:** frame + metadata-zone config + optional analysis-only exclusion mask supplied by an approved upstream detector  
 **Output:** metadata detection + cleanup mask/plan + confidence/evidence  
 **Required evidence:** candidate count, selected bbox, anchor distance/proximity, fill/compactness, area ratio, dominance margin to the next plausible candidate, confidence and reason  
-**Required exclusion evidence when used:** exclusion-applied flag, excluded-pixel count/ratio, whether the selected metadata candidate may have been fragmented by exclusion, and the coordinate-space identity shared with the frame  
+**Required exclusion evidence when used:** exclusion-applied flag, excluded-pixel count/ratio, excluded-candidate-pixel count, whether fragmentation occurred, whether fragment association was applied/resolved, associated fragment count, whether the resulting metadata mask requires joint cleanup, and the coordinate-space identity shared with the frame  
 **Automatic-selection rule:** the selected component must satisfy all configured area/shape constraints, lie within the approved corner-anchor envelope, and exceed the next plausible candidate by the configured dominance margin  
 **Analysis-exclusion rule:** an approved spatial border mask may be excluded from connected-component analysis to prevent the decorative border from merging with a badge; exclusion affects analysis only and is not itself proof that any excluded pixel is metadata  
-**Fragmentation rule:** if exclusion may have split one metadata object into multiple fragments, the selected fragment must not be treated as a complete destructive metadata mask unless a separately validated association/reconstruction rule proves completeness; otherwise `REVIEW`  
-**Review:** multiple plausible anchored candidates, insufficient dominance margin, implausible shape/area, metadata connected to unexplained artwork, or unresolved exclusion fragmentation  
+**Fragmentation rule:** if exclusion may have split one metadata object into multiple fragments, the selected fragment must not be treated as a complete destructive metadata mask unless the association rule below proves completeness; otherwise `REVIEW`  
+**Safe fragment-association rule:** exclusion-fragmented metadata may be reconstructed for *joint cleanup only* when all of the following hold:
+- the primary anchored fragment and every associated fragment belong to the same connected component in the pre-exclusion candidate topology;
+- all non-excluded fragments from that raw topology group remain inside the configured corner-anchor envelope; any fragment from the group outside the envelope causes `REVIEW`;
+- every associated secondary fragment is spatially adjacent to the approved exclusion boundary rather than arbitrarily nearby;
+- the reconstructed union still satisfies configured metadata area/compactness/anchor constraints;
+- there is exactly one dominant reconstructed anchored candidate; competing reconstructed groups cause `REVIEW`;
+- excluded pixels themselves are not copied into the metadata mask; overlap pixels remain the responsibility of the separately approved border mask;
+- the resulting detection is marked `requires_joint_cleanup=true` and must never be passed to standalone metadata removal.
+**Review:** multiple plausible anchored candidates, insufficient dominance margin, implausible shape/area, metadata connected to unexplained artwork, unresolved exclusion fragmentation, or a raw topology group extending outside the anchor envelope  
 **Prohibited:** deleting arbitrary text/numbers merely because they occur inside the broad metadata zone  
 **Prohibited:** lowering global ambiguity thresholds to force a production case through automatic cleanup  
-**Prohibited:** filling/deleting the whole anchor box or performing broad morphology merely to reconnect an exclusion-fragmented badge  
+**Prohibited:** filling/deleting the whole anchor box, convex hull, bounding box, or performing broad morphology merely to reconnect an exclusion-fragmented badge  
 **Rule:** the broad metadata zone is a search boundary; the smaller corner-anchor envelope is the automatic-selection boundary  
 **Rule:** a clearly non-anchored component must not compete with an anchored badge for auto-selection, but it remains recorded as evidence  
 **Rule:** detection may run without mutation for diagnostics/planning; destructive cleanup occurs only after the stage policy authorizes it  
@@ -106,7 +114,7 @@ Every replaceable provider should expose:
 **Required evidence:** explained/unexplained contact ranges or fractions, combined planned deletion mask, planned removed-pixel count/ratio, reasons and confidence  
 **SAFE_PLAN rule:** all risky border contact must be explainable by approved metadata/corner geometry; any unexplained contact causes `REVIEW`  
 **SAFE_PLAN rule:** border and metadata evidence must each meet their automatic policy thresholds independently; the planner does not raise weak detector confidence  
-**SAFE_PLAN rule:** metadata mask completeness must be established; an unresolved fragment produced by analysis exclusion cannot authorize joint mutation  
+**SAFE_PLAN rule:** metadata mask completeness must be established; unresolved exclusion fragmentation cannot authorize joint mutation; safely associated metadata marked `requires_joint_cleanup=true` is valid only when paired with the exact approved border evidence/mask in the same coordinate space  
 **Deletion scope rule:** the combined mask is bounded to approved spatial border bands plus approved metadata mask; no global color key is permitted  
 **Coordinate rule:** all evidence/masks are validated in one pre-cleanup frame coordinate space  
 **Mutation rule:** planner construction is non-destructive; applying a plan is a separate operation and may occur only for `SAFE_PLAN`  
@@ -163,7 +171,7 @@ Every replaceable provider should expose:
 **Input:** job/frame/stage outcomes  
 **Output:** machine-readable manifest + summary  
 **Invariant:** sufficient traceability to source/config/version  
-**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup/exclusion evidence, joint-cleanup plan evidence when used, significant actions/findings, final output reference/hash
+**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup/exclusion/association evidence, joint-cleanup plan evidence when used, significant actions/findings, final output reference/hash
 
 ## Provider Registry / Factory
 Provider selection shall be resolved during job initialization from validated TOML configuration.
