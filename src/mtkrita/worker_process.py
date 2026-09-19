@@ -7,6 +7,13 @@ from multiprocessing.process import BaseProcess
 
 from .ipc import JsonMessageCodec, JsonMessageReceiver, JsonMessageSender, WireMessageError
 from .messages import MessageEnvelope, MessageKind
+from .worker_tasks import (
+    TaskCandidateResult,
+    TaskCandidateStatus,
+    WorkerTaskContractError,
+    candidate_event,
+    parse_execute_task,
+)
 
 WORKER_CONTROL_JOB_ID = "__worker_control__"
 
@@ -219,11 +226,32 @@ def worker_process_entrypoint(
                 return
 
             if command.message_type == "ExecuteTask":
-                _send_internal_error(
-                    sender,
-                    worker_id=worker_id,
-                    causation=command,
-                    detail="ExecuteTask executor is not connected in the process-adapter baseline",
+                try:
+                    parse_execute_task(command)
+                except WorkerTaskContractError as exc:
+                    _send_internal_error(
+                        sender,
+                        worker_id=worker_id,
+                        causation=command,
+                        detail=f"invalid ExecuteTask contract: {exc}",
+                    )
+                    continue
+                sender.send(
+                    _worker_event(
+                        "TaskStarted",
+                        worker_id=worker_id,
+                        causation=command,
+                    )
+                )
+                sender.send(
+                    candidate_event(
+                        result=TaskCandidateResult(
+                            status=TaskCandidateStatus.FAILED,
+                            error_code="WORKER.EXECUTOR_NOT_CONFIGURED",
+                            error_message="No concrete task executor is connected to this worker runtime",
+                        ),
+                        causation=command,
+                    )
                 )
                 continue
 
