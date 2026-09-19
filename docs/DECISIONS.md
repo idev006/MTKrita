@@ -140,3 +140,20 @@ UI design rules:
 - use progressive disclosure so normal users see simple task-oriented controls while advanced/diagnostic details remain available
 - favor visual previews/overlays over technical explanations where practical
 - UI communicates with MainBoard/application services, never directly with workers/providers/shared mutable stores
+
+## ADR-022 — Design for Testability and Automated Verification
+**Status:** Accepted
+
+Testability is a first-class architecture property. Critical modules must be designed so they can be exercised headlessly and automatically without UI interaction.
+
+Rules:
+- inject/replace infrastructure and provider dependencies where needed
+- avoid hidden global mutable state
+- provide stable seams for filesystem/path, time, ID generation, stores, broker, transport and provider behavior
+- business/domain logic must be independently testable
+- provider implementations must pass shared contract tests
+- CI must run automated unit/component/contract tests and selected regression fixtures
+- critical reliability behavior must support automated fault-injection and recovery tests
+- every reproducible critical defect should become a permanent regression test
+
+Reference: `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`.
