@@ -170,3 +170,25 @@ Required behavior:
 - manifests/tests must record source transparency provenance separately from final alpha state.
 
 This decision prevents alpha introduced by cleanup from being mistaken for transparency that existed in the source artwork.
+
+## ADR-024 — Durable Commit Intent Bridges Filesystem and JobStore
+**Status:** Accepted
+
+A final artifact rename and a SQLite state transaction cannot participate in one native atomic transaction. MTKrita therefore uses a **durable commit-intent protocol** owned by the control plane to make cross-resource completion recoverable and auditable.
+
+Required sequence:
+1. validate the authoritative `task_id`, `worker_id`, `attempt`, generation and candidate hash;
+2. persist a durable artifact-commit intent in JobStore before publishing the final artifact;
+3. atomically promote the validated worker-scratch candidate to its PathManager-resolved final target;
+4. verify the promoted artifact identity/hash;
+5. durably finalize the commit record and the corresponding task/state transition;
+6. publish completion events only after durable finalization.
+
+Crash/restart rules:
+- an intent without a final file remains recoverable/incomplete and must never imply success;
+- an intent with a matching final file may be finalized during reconciliation when task/attempt identity is still valid;
+- a mismatching final file/hash is an integrity error and must not be overwritten silently;
+- stale/superseded attempts may not finalize an intent or claim an existing artifact;
+- reconciliation is idempotent and records its decision in durable evidence.
+
+This protocol is a recovery-oriented substitute for an impossible cross-filesystem/database ACID transaction. Final file existence alone is never sufficient evidence that a task or job succeeded.
