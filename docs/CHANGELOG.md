@@ -1,5 +1,17 @@
 # Documentation Changelog
 
+## v0.6 — 2026-09-19
+- Implemented and documented the platform-control foundation track in PR #10.
+- Added PathManager typed resource ownership and ResourceBroker centralized artifact promotion.
+- Added durable SQLite JobStore v2 with compatible v1→v2 migration, task attempts, leases and CAS stale-write protection.
+- Added versioned command/event envelopes, in-process EventBus and MainBoard composition root.
+- Added pause/stop/resume lifecycle control and idempotent startup reconciliation.
+- Extended the state machine with PAUSING, PAUSED, STOPPING, STOPPED and INTERRUPTED semantics.
+- Accepted ADR-024 for durable commit intent across filesystem and JobStore boundaries.
+- Added durable artifact commit journal/coordinator/reconciler and fault-injection tests for crash-after-promotion, missing final files, hash mismatch and superseded attempts.
+- Added ordered startup recovery so valid promoted artifacts are reconciled before orphaned RUNNING tasks are interrupted.
+- Updated Platform Foundation Implementation Status to v1.7.
+
 ## v0.5 — 2026-09-19
 - Finalized architecture principles for PathManager, MainBoard/control plane, ResourceBroker, multi-worker isolation, leases/attempts, centralized shared-state commitment, pause/resume/recovery and observability.
 - Added engineering handoff checklist and reference implementation blueprint.
