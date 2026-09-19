@@ -1,100 +1,128 @@
 # MTKrita Current Implementation Status and Known Gaps
 
 ## Status
-SSOT — Engineering Handoff Status v1.2
+SSOT — Engineering Implementation Status v2.0
 
 ## Purpose
-ป้องกันความสับสนระหว่างสิ่งที่ถูกกำหนดในเอกสารกับสิ่งที่ implement/verify แล้วจริง ณ จุด handoff
+ป้องกันความสับสนระหว่างสิ่งที่กำหนดในเอกสารกับสิ่งที่ implement/verify แล้วจริง และระบุเส้นทางพัฒนาปัจจุบันเพียงเส้นเดียว
 
-## Baseline on `main`
-### Completed / Established
-- document-driven SSOT governance
-- M1 core skeleton
-- Python package / CLI baseline
-- input inspection + source hashing
-- job manifest baseline
-- Windows CI workflow
-- TOML config baseline + `tomllib` loader/validation tests
-- project architecture, workflow, use cases, UML, sequence, state, deployment, recovery, data-flow, stage contracts, security model
-- provider interface architecture
-- PathManager/MainBoard/ResourceBroker/multi-worker/reliability architecture specifications
-- developer handoff/WBS/coding standards/acceptance matrix
-- golden-corpus specification, runbook, release checklist, maintenance guide, glossary and team execution playbook
+## Current Development Topology
+- `main` — approved baseline / merged history
+- PR #10 / `feat/platform-control-foundation` — platform/control-plane foundation
+- PR #11 / `feat/m2-platform-integration` — maintained M2 + platform integration authority, stacked on PR #10
+- PR #9 — closed as superseded by PR #11
+- PR #8 — legacy M2 line, no longer an active development authority
 
-## Active M2 Development
-The active implementation line is now **PR #9 / branch `feat/m2-refresh`**, created directly from the latest SSOT baseline on `main`.
+New M2 production work shall continue on PR #11 until its gate is satisfied. Do not restart work on PR #8/#9.
 
-PR #8 / branch `feat/m2-transparent-border` is considered the legacy M2 implementation line and should not receive new development once PR #9 is verified. It remains temporarily open only as historical comparison/reference until the refresh branch proves equivalent-or-better behavior.
+## Implemented and Verified — Core / Platform
+Verified Windows CI coverage now includes:
+- centralized PathManager and typed path/resource ownership;
+- immutable staged INPUT namespace and source hash verification;
+- ResourceBroker-controlled shared/final artifact promotion;
+- SQLite JobStore v3, migrations, durable jobs/tasks/descriptors, leases/attempts and stale-write CAS protection;
+- pause/stop/resume policy and startup reconciliation;
+- ADR-024 durable artifact commit intent and crash reconciliation;
+- MainBoard composition, EventBus, centralized JSONL logging and diagnostic bundle baseline;
+- bounded fair scheduler, durable scheduler reconstruction and backpressure;
+- WorkerManager, heartbeat/watchdog and worker-loss interruption/requeue path;
+- Windows `spawn` worker process adapter, versioned JSON IPC and real-process smoke tests;
+- immutable ExecuteTask v2 contract and candidate-only worker results;
+- CandidateResultCoordinator authority chain through ResourceBroker + ADR-024 before durable SUCCEEDED;
+- strict M2 durable task descriptor and MainBoard-owned final target resolution.
 
-Implemented on PR #9 at the current handoff point includes:
-- configurable deterministic grid splitter
-- alpha-aware adaptive per-frame border detector/remover baseline
-- conservative top-left metadata/frame-number detector/remover baseline
-- source-phase transparency/background routing decision
-- provenance regression proving cleanup-generated alpha cannot redefine source transparency routing
-- alpha-content analysis using true foreground occupancy
-- smart-fit baseline with no upscale by default
-- LINE static validator baseline including rejection of fully transparent empty output
-- automated unit/component tests for grid, border, metadata, routing, content/fit and LINE validation
+## Implemented and Verified — M2 Transparent Pipeline
+PR #11 currently includes and tests:
+- deterministic exact + controlled scaled 5×2 extraction with method/confidence evidence;
+- source transparency classification captured before alpha-generating cleanup (ADR-023);
+- alpha-aware border detection including bounded inset-border discovery after transparent padding;
+- per-side border offset/thickness/color/confidence/contact evidence;
+- localized border contact ranges and REVIEW-first contact safety;
+- conservative anchored frame-number metadata detection with geometry/compactness/dominance evidence;
+- analysis-only border exclusion for metadata diagnostics without granting deletion authority;
+- enclosed-visible-hole completion for safe inclusion of interior badge details such as dark numerals;
+- metadata/exclusion completeness guards that prohibit standalone removal when joint cleanup is required;
+- content analysis, no-upscale smart fit and LINE static validation;
+- atomic PNG scratch/export support with SHA-256 and overwrite refusal;
+- `M2FrameTaskExecutor` mapping behind the platform TaskExecutor boundary;
+- real Windows spawned-child M2 execution through candidate result → MainBoard validation → ADR-024 final commit;
+- synthetic 10-frame E2E and imported M2 regression suite.
 
-## M2 Known Remaining Work
-- hybrid separator refinement for resized/non-divisible sheet geometry
-- border/artwork same-color topology hardening
-- metadata detector hardening against diverse badge styles
-- end-to-end `FramePipeline` orchestration
-- structured QA findings integrated with `FrameResult`
-- manifest/output lineage integration
-- transparent golden corpus gate
-- final CI green evidence for PR #9
+## Active Tier-B Hardening
+Issue #12 tracks production-like transparent corpus findings discovered without committing user/source image bytes.
 
-## Architecture Approved but Not Fully Implemented
-The following are authoritative architecture, not completed runtime features yet:
-- MainBoard control-plane composition
-- PathManager + typed resource references
-- ResourceBroker + centralized shared-state commit
-- durable JobStore/checkpoints
-- worker process manager
-- task lease / attempt / stale-result rejection
-- multi-worker parallel scheduling
-- pause / stop / resume / startup reconciliation
-- centralized structured logging/event collection
-- diagnostic bundle generation
-- atomic artifact commit flow
+Implemented/verified hardening:
+- inset decorative border detection after transparent outer padding;
+- same/near-border-color inner-contact refusal;
+- anchor-aware metadata discrimination;
+- localized border-contact evidence;
+- `JointCleanupPlanner` baseline producing SAFE_PLAN/REVIEW without mutating during planning;
+- deterministic bounded joint mask/hash and removal-ratio safety;
+- analysis exclusion fragmentation evidence and planner refusal when metadata completeness is unresolved;
+- enclosed-visible-hole completion for interior numeral/detail pixels.
 
-These capabilities should be implemented through the WBS before claiming M5/M6 production-automation readiness.
+Still in progress:
+- safe fragment association for metadata split by approved border-analysis exclusion;
+- proof that associated metadata mask is complete and can be used only with the exact border evidence;
+- wiring approved joint border+metadata cleanup into `FramePipeline` while preserving ADR-023 source transparency provenance;
+- Tier-B owner-approved production/representative transparent corpus acceptance.
 
-## M3 Not Yet Complete
-Required opaque-background work still includes:
-- background classifier
-- edge-connected/flood-fill provider
-- dark-foreground preservation strategy
-- mask refinement / halo handling
-- confidence-driven REVIEW fallback
-- mixed transparent/opaque E2E
+Until these are complete, overlap/ambiguous cases remain REVIEW. No threshold is lowered merely to force automation.
 
-## Current CI Note
-PR #9 CI has been started and must complete successfully before the refreshed M2 baseline is considered verified. Until CI is green, M2 remains `IN PROGRESS`.
+## M3 Opaque Route — Not Yet Implemented to Production Level
+Required work remains:
+- opaque background classifier;
+- edge-connected/flood-fill background provider;
+- dark foreground preservation and safe background/foreground topology;
+- mask refinement/halo handling;
+- confidence-driven REVIEW fallback;
+- metadata-mask integration with opaque background removal;
+- mixed transparent/opaque E2E and Tier-B corpus evidence.
 
-## Important Handoff Warning
-Do not assume a documented capability is implemented merely because it appears in SSOT. Use this status document, GitHub Issues/PRs, tests, and current branch contents together to determine implementation state.
+## UI / UX
+Architecture and UX SSOT are defined, but production desktop UI is not yet the active implementation milestone.
 
-## First Engineering Actions for Incoming Team
-1. continue PR #9 from `feat/m2-refresh`;
-2. obtain green Ruff + pytest CI evidence;
-3. complete remaining M2 work packages and golden-corpus evidence;
-4. merge only after gate criteria are met;
-5. close/supersede PR #8 after PR #9 is verified;
-6. implement M3 opaque pipeline;
-7. implement runtime-control architecture work packages before production batch milestone.
+Rules already locked:
+- UI is a replaceable presentation shell around MainBoard/application services;
+- no critical business/pipeline rules in UI callbacks;
+- OS theme/DPI behavior;
+- Arabic numerals 0–9;
+- task-oriented controls, combo boxes, sliders/range sliders, presets and visual previews;
+- engine remains fully headless/testable.
+
+## Windows Distribution
+Architecture and distribution plan are documented. Current Windows CI proves Python/runtime child-process behavior, but packaged/frozen executable verification is still pending.
+
+Remaining distribution work includes installer/frozen-runtime selection, packaged `spawn` smoke, signing/release pipeline and final release evidence.
+
+## Repository / Verification State
+- PR #11 is the maintained M2 integration authority and remains draft.
+- PR #9 is superseded and closed.
+- no production/user Sticker Sheet bytes are committed for Tier-B diagnostics; hashes/measurements only.
+- generated PNG/log/database/cache/temp/build artifacts are not part of the PR.
+- every accepted behavioral change is expected to carry regression coverage and Windows CI evidence.
+
+## Current Gate
+M2 is not yet release-complete because Tier-B transparent corpus acceptance remains open. The current implementation deliberately prefers REVIEW over destructive guessing.
+
+## Immediate Engineering Sequence
+1. finish safe metadata fragment association under the SSOT v1.9 rules;
+2. verify fragment completeness + enclosed-detail mask evidence;
+3. integrate JointCleanupPlanner into FramePipeline only for SAFE_PLAN;
+4. rerun full Windows Ruff + pytest + real-process E2E;
+5. run representative Tier-B transparent corpus and record owner acceptance;
+6. close M2 gate / Issue #2 when acceptance evidence is complete;
+7. begin M3 opaque-background implementation;
+8. then advance UI/batch-productization/distribution milestones.
 
 ## Canonical References
+- `35_INTERFACE_AND_STAGE_CONTRACTS.md`
+- `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
+- `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md`
+- `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
-- `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md`
 - `40_ACCEPTANCE_TEST_MATRIX.md`
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
-- `50_ENGINEERING_HANDOFF_CHECKLIST.md`
-- `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
-- `58_SSOT_COVERAGE_AUDIT.md`
-- PR #9 (active)
-- PR #8 (legacy/superseded after verification)
-- Issues #2 and #3
+- `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
+- PR #10, PR #11
+- Issues #2, #12 and #3
