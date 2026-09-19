@@ -9,8 +9,8 @@ from PIL import Image
 
 @dataclass(frozen=True)
 class MetadataZone:
-    x_fraction: float = 0.20
-    y_fraction: float = 0.20
+    x_fraction: float = 0.25
+    y_fraction: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ def detect_corner_metadata(
     zone: MetadataZone | None = None,
     color_tolerance: int = 24,
     min_area_ratio: float = 0.002,
-    max_area_ratio: float = 0.30,
+    max_area_ratio: float = 0.50,
 ) -> MetadataDetection:
     """Detect a compact top-left metadata component conservatively."""
     resolved_zone = zone or MetadataZone()
@@ -71,7 +71,7 @@ def detect_corner_metadata(
 
         fill_ratio = area / (w * h)
         proximity = 1.0 - min(1.0, (x + y) / max(1, zone_width + zone_height))
-        containment = 1.0 if (x + w < zone_width and y + h < zone_height) else 0.65
+        containment = 1.0 if (x + w <= zone_width and y + h <= zone_height) else 0.65
         confidence = (0.45 * fill_ratio) + (0.35 * proximity) + (0.20 * containment)
         candidates.append((confidence, label, (x, y, x + w, y + h)))
 
@@ -80,7 +80,7 @@ def detect_corner_metadata(
 
     candidates.sort(reverse=True, key=lambda item: item[0])
     best_confidence, best_label, bbox = candidates[0]
-    if len(candidates) > 1 and candidates[1][0] >= best_confidence - 0.08:
+    if len(candidates) > 1 and candidates[1][0] >= best_confidence - 0.10:
         return MetadataDetection(None, best_confidence, None, "multiple ambiguous metadata candidates")
 
     full_mask = np.zeros((height, width), dtype=np.uint8)
@@ -89,7 +89,7 @@ def detect_corner_metadata(
     return MetadataDetection(
         bbox=bbox,
         confidence=float(best_confidence),
-        mask=Image.fromarray(full_mask, mode="L"),
+        mask=Image.fromarray(full_mask),
         reason="single compact top-left metadata candidate",
     )
 
@@ -109,5 +109,5 @@ def remove_detected_metadata(
     alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8).copy()
     mask = np.asarray(detection.mask, dtype=np.uint8)
     alpha[mask > 0] = 0
-    rgba.putalpha(Image.fromarray(alpha, mode="L"))
+    rgba.putalpha(Image.fromarray(alpha))
     return rgba
