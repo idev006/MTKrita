@@ -125,3 +125,18 @@ Workers shall not directly mutate shared job state, manifests, final output name
 Pause, stop, resume, retry, crash recovery, checkpointing, idempotency, structured logging, error codes, diagnostics and startup reconciliation are architectural requirements, not later operational add-ons.
 
 Jobs and checkpoints must have durable state independent of worker memory. A process/worker crash must never create a false `COMPLETED` state. Critical outputs are atomically promoted and recorded with provenance/hashes before completion is accepted.
+
+## ADR-021 — UI Is a Replaceable Presentation Shell
+**Status:** Accepted
+
+Desktop UI, CLI and future presentation layers are adapters over application/domain services. Critical business rules, pipeline sequencing, provider selection, QA decisions, resource/path ownership, persistence and recovery logic shall not live in the UI layer.
+
+The engine must remain operational headlessly. Replacing the desktop toolkit or introducing another presentation surface must not require moving or duplicating domain rules.
+
+UI design rules:
+- follow OS theme and DPI conventions by default
+- all user-visible numeric values use Arabic numerals 0-9
+- prefer constrained visual controls such as combo boxes, sliders, range sliders and visual presets over free-form technical entry
+- use progressive disclosure so normal users see simple task-oriented controls while advanced/diagnostic details remain available
+- favor visual previews/overlays over technical explanations where practical
+- UI communicates with MainBoard/application services, never directly with workers/providers/shared mutable stores
