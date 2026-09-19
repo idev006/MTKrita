@@ -162,7 +162,8 @@ def test_safe_transparent_border_badge_overlap_uses_joint_cleanup() -> None:
     border_color = (160, 220, 100, 255)
     for offset in range(6, 9):
         draw.rectangle((offset, offset, 95 - offset, 79 - offset), outline=border_color)
-    draw.ellipse((3, 3, 21, 21), fill=border_color)
+    # Keep the badge inside the approved anchor envelope while still crossing the frame border.
+    draw.ellipse((2, 2, 16, 16), fill=border_color)
     draw.rectangle((32, 24, 63, 55), fill=(240, 100, 80, 255))
 
     output = process_frame(
@@ -189,7 +190,8 @@ def test_joint_cleanup_never_bypasses_opaque_background_route() -> None:
     border_color = (160, 220, 100, 255)
     for offset in range(6, 9):
         draw.rectangle((offset, offset, 95 - offset, 79 - offset), outline=border_color)
-    draw.ellipse((3, 3, 21, 21), fill=border_color)
+    # Same production-proportional badge as the transparent case, but on an opaque source.
+    draw.ellipse((2, 2, 16, 16), fill=border_color)
     draw.rectangle((32, 24, 63, 55), fill=(240, 100, 80, 255))
 
     output = process_frame(
