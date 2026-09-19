@@ -1,7 +1,7 @@
 # Joint Border + Metadata Cleanup Specification
 
 ## Status
-SSOT — Joint Cleanup Safety Contract v1.1
+SSOT — Joint Cleanup Safety Contract v1.2
 
 ## Decision Record — ADR-028
 **Title:** Joint Border/Metadata Cleanup Is Planned Before Destructive Mutation  
@@ -10,16 +10,6 @@ SSOT — Joint Cleanup Safety Contract v1.1
 When frame-number metadata touches or overlaps a decorative frame border, MTKrita shall not execute border removal and metadata removal as two independent destructive operations. Detection remains separable, but mutation is authorized only from one combined cleanup plan whose evidence explains the complete contact topology.
 
 This decision extends ADR-005 (Conservative Automation), ADR-008 (Adaptive Border Removal), ADR-023 (Source Transparency Provenance), ADR-024 (Durable Commit Intent), ADR-026 (Worker Results Are Candidates) and ADR-027 (Immutable Staged Inputs).
-
-## Problem
-Representative transparent Sticker Sheets can contain all of the following at once:
-- transparent padding outside the visual frame;
-- an inset rounded/anti-aliased decorative border;
-- a frame-number badge anchored at the top-left corner;
-- the badge touching or overlapping the decorative border;
-- real sticker artwork and Thai text close to the border.
-
-If border removal runs first, the badge may be partially cropped or merged into border evidence. If metadata removal runs first, alpha can be changed before routing provenance or border topology is safely understood. Lowering thresholds to force either stage through would violate `REVIEW > destructive guess`.
 
 ## Architectural Rule
 **Detect independently. Plan jointly. Mutate once.**
@@ -45,101 +35,93 @@ Content QA / Smart Fit / Export candidate
 No detector owns final destructive authority in an overlap case.
 
 ## Source Transparency Invariant
-Source/background routing must be captured from source/extracted-frame alpha state before any cleanup that can create or materially alter alpha.
-
-Border/metadata detection may inspect pixels and build masks without changing routing provenance.
-
-The combined cleanup result must never be reinterpreted as source transparency evidence.
-
-## Inputs to JointCleanupPlanner
-Required inputs:
-- immutable source transparency decision/provenance;
-- border detection with per-side offset, thickness, confidence, color/range and contact evidence;
-- metadata detection with bbox/mask, anchor evidence, compactness/shape evidence, candidate counts, confidence and dominance margin;
-- frame geometry;
-- configured metadata anchor envelope;
-- configured safety margins.
-
-Optional future inputs:
-- topology graph / connected-component evidence;
-- provider-specific contour evidence;
-- user-approved metadata template/profile.
+Source/background routing must be captured from source/extracted-frame alpha state before any cleanup that can create or materially alter alpha. Border/metadata detection may inspect pixels and build masks without changing routing provenance. The combined cleanup result must never be reinterpreted as source transparency evidence.
 
 ## Safe Automatic Plan Requirements
-Automatic joint cleanup is permitted only when **all** required conditions hold:
+Automatic joint cleanup is permitted only when all required conditions hold.
 
-1. **Strong border evidence**
-   - border has approved multi-side consensus or equivalent strong topology evidence;
-   - per-side offset/thickness geometry is bounded and internally consistent;
-   - confidence meets automatic policy.
+### 1. Strong border evidence
+- border has approved multi-side consensus or equivalent strong topology evidence;
+- per-side offset/thickness geometry is bounded and internally consistent;
+- confidence meets automatic policy;
+- visible spatial support and visible-pixel color purity are measured separately for rounded/inset borders;
+- transparent pixels expected at rounded corners do not count as wrong-color border pixels;
+- insufficient visible support, weak color purity, inconsistent side color or inconsistent band geometry still causes `REVIEW`.
 
-2. **Strong metadata evidence**
-   - exactly one dominant anchored badge candidate is selected;
-   - candidate satisfies area, compactness and anchor constraints;
-   - dominance margin meets policy;
-   - candidate is inside the approved metadata anchor envelope.
+### 2. Strong metadata evidence
+- exactly one dominant anchored badge candidate is selected;
+- selected destructive candidate is fully bounded to the approved corner-anchor envelope;
+- candidate satisfies configured area, compactness and anchor constraints;
+- dominance margin meets policy;
+- post-exclusion topology proves the selected candidate is isolated from remote artwork.
 
-3. **Contact is explainable**
-   - every risky border-contact pixel/segment that would otherwise block automatic border cleanup is either:
-     - inside the approved metadata mask/bbox plus a small configured adjacency allowance; or
-     - part of known perpendicular border corner geometry;
-   - any unexplained contact outside that region causes `REVIEW`.
+### 3. Contact is explainable
+Every risky border-contact pixel/segment that would otherwise block automatic border cleanup must be explainable by approved metadata/corner geometry. Any unexplained contact outside that region causes `REVIEW`.
 
-4. **Deletion scope is bounded**
-   - the planned deletion set is the union of approved geometric border bands and approved metadata mask only;
-   - no global color-key deletion is allowed;
-   - no flood deletion may cross into unapproved artwork regions;
-   - planned deletion must not consume the frame or violate configured maximum removal bounds.
+### 4. Deletion scope is bounded
+- deletion set is the union of approved geometric border bands and approved metadata mask only;
+- no global color-key deletion;
+- no flood deletion crossing into unapproved artwork;
+- planned deletion must remain within configured removal bounds.
 
-5. **No hidden coordinate ambiguity**
-   - all masks/rectangles use the same pre-cleanup frame coordinate space;
-   - crop/translation is not applied between detector outputs and plan validation.
+### 5. Coordinate identity is exact
+All masks/rectangles use one pre-cleanup frame coordinate space. Crop/translation cannot occur between detector outputs and plan validation. Joint-only metadata must bind to the exact approved border/exclusion mask identity.
+
+## Rounded/Inset Border Evidence Model
+Tier-B representative sheets proved that rounded transparent corners can lower raw whole-strip coverage even when the visible border pixels are strongly color-consistent.
+
+Therefore inset-border evidence separates:
+- **visible support:** fraction of the strip containing visible pixels supporting a plausible border band;
+- **visible color purity:** fraction of visible samples agreeing with the selected border color model;
+- **multi-side consensus:** compatible color/geometry evidence from the required number of sides;
+- **band continuity:** bounded contiguous offsets/thickness;
+- **contact evidence:** localized inner-edge ranges/fractions.
+
+Automatic policy may use these dimensions to compute structural confidence, but shall not simply lower the approved automatic threshold. Transparent corner pixels are absence-of-support, not wrong-color evidence.
+
+## Post-Exclusion Metadata Isolation Rule
+Tier-B evidence also proved that the decorative border can connect a top-left badge to unrelated artwork before exclusion. Pre-exclusion raw-group membership therefore describes connectivity evidence but does not by itself define destructive ownership.
+
+For exclusion-fragmented metadata, automatic joint cleanup may reconstruct a local candidate only when all conditions hold:
+- each selected local fragment belongs to the same relevant pre-exclusion topology group or otherwise has explicitly proven local association;
+- every selected local fragment is fully contained inside the approved anchor envelope;
+- secondary selected fragments created by exclusion are adjacent to the approved exclusion boundary and remain spatially local to the primary candidate;
+- after applying the analysis-only exclusion, the selected candidate/local group has **no non-excluded connected path outside the anchor envelope**;
+- remote fragments from the same pre-exclusion raw topology may be ignored only when they are disconnected from the selected candidate by the approved exclusion mask;
+- ignored/out-of-anchor fragments never enter candidate shape scoring or the metadata deletion mask;
+- the reconstructed local union still passes area/fill/compactness/anchor/dominance rules;
+- competing plausible anchored candidates cause `REVIEW`;
+- excluded pixels are not copied into metadata mask; overlap pixels remain border-owned;
+- resulting detection is marked `requires_joint_cleanup=true` and cannot be sent to standalone metadata removal.
+
+If the selected post-exclusion component itself extends outside the anchor envelope without crossing the approved exclusion mask, the case remains `REVIEW`.
 
 ## Exclusion-Aware Metadata Shape Confidence
-When an approved spatial border mask is used only as an **analysis exclusion**, it may remove pixels that are physically part of the badge/border overlap and therefore lower the apparent fill ratio of the remaining metadata fragments.
+An approved spatial border mask used as analysis exclusion may remove pixels physically belonging to the badge/border overlap and lower apparent fill ratio. Shape evidence may be reconstructed only under these restrictions:
+- overlap evidence is limited to approved exclusion pixels associated with the selected isolated local candidate;
+- only overlap pixels inside the candidate bbox may contribute to analysis fill/shape confidence;
+- overlap pixels never enter metadata deletion mask;
+- overlap pixels remain owned by the exact border mask checked by `JointCleanupPlanner`;
+- automatic metadata confidence threshold is not lowered;
+- evidence records overlap-pixel count used only for shape scoring.
 
-MTKrita may reconstruct **shape evidence only** for a safely associated joint-cleanup candidate under all of these restrictions:
-- overlap evidence is limited to pixels belonging to the same proven raw-topology group as the selected metadata candidate;
-- only approved exclusion pixels that fall inside the reconstructed candidate bbox may contribute to analysis fill/shape confidence;
-- these overlap pixels never enter the metadata deletion mask;
-- overlap pixels remain owned by the exact border mask whose hash/identity is checked by `JointCleanupPlanner`;
-- the automatic metadata confidence threshold is not lowered;
-- unresolved association, competing candidates, out-of-anchor fragments or mismatched exclusion identity still cause `REVIEW`;
-- evidence records the count of exclusion-overlap pixels used only for shape scoring.
-
-This rule corrects confidence distortion caused by an approved analysis exclusion without expanding the destructive deletion scope.
+## Enclosed Interior Completion
+A compact badge may contain visible interior pixels whose RGB resembles the background, such as dark digits inside a light badge. Such pixels may be added to metadata mask only when they are topologically fully enclosed by the approved badge support within its bounded local component. Open regions connected to exterior are never filled. Broad bounding-box fill, convex hull fill or morphology-based guessing is prohibited.
 
 ## Preferred Mutation Strategy
-For overlap cases, the preferred M2 strategy is **mask-first cleanup**, not sequential crop-first cleanup:
+For overlap cases use mask-first cleanup, not sequential crop-first cleanup:
+1. build geometric border-band mask;
+2. build approved isolated metadata mask;
+3. validate combined deletion plan;
+4. apply combined mask to alpha once for transparent route;
+5. allow content analysis/smart fit later.
 
-1. build geometric border-band mask from detected offsets/thicknesses;
-2. combine with approved metadata mask;
-3. validate the combined deletion plan;
-4. apply the combined mask to alpha once;
-5. allow content analysis / smart fit to remove now-empty transparent padding later.
-
-Why:
-- avoids coordinate shifts between border and metadata stages;
-- preserves provenance and evidence in one coordinate system;
-- makes deletion scope inspectable before mutation;
-- allows a single rollback/review boundary;
-- prevents partial badge cropping.
-
-Existing crop-based border removal remains valid for ordinary non-contact borders when current safety rules pass.
+For opaque route, the same approved masks remain plan/evidence only until M3 composes background removal and metadata cleanup into final alpha.
 
 ## Contact Localization Evidence
-A boolean `contact_risk` is insufficient for joint cleanup authorization.
-
-The border provider/planner path must support structured contact localization evidence, at minimum one of:
-- contact pixel/segment mask in frame coordinates;
-- per-side contact intervals/ranges;
-- equivalent topology object that can prove all contact is contained within an approved metadata/corner region.
-
-Until this evidence exists, overlap cases remain `REVIEW` even if badge detection confidence is high.
+A boolean `contact_risk` is insufficient. Border provider/planner path must expose contact pixel/segment mask, per-side contact intervals/ranges, or equivalent topology evidence. Until complete contact localization exists, overlap cases remain `REVIEW`.
 
 ## Joint Cleanup Plan Model
-Recommended immutable model:
-
 ```text
 JointCleanupPlan
 - status: SAFE_PLAN | REVIEW
@@ -156,76 +138,54 @@ JointCleanupPlan
 - evidence{}
 ```
 
-The plan is a worker-local computation result/evidence object. It is not authority to publish final files.
+The plan is worker-local computation/evidence, not final publication authority.
 
 ## Worker / MainBoard Boundary
-Workers may:
-- detect border/metadata;
-- build a provisional joint cleanup plan;
-- apply an approved local plan to a private working copy;
-- write only private scratch candidate artifacts;
-- return structured evidence.
-
-Workers may not:
-- overwrite source or staged INPUT;
-- choose final output paths;
-- mutate durable task state directly;
-- bypass MainBoard validation, ResourceBroker or ADR-024 final artifact commit.
+Workers may detect, plan, apply an approved local plan to private working copy, write private scratch candidate artifacts and return structured evidence. Workers may not overwrite source/staged INPUT, select final output paths, mutate durable task state directly, or bypass MainBoard/ResourceBroker/ADR-024 final commit.
 
 ## REVIEW Conditions
-Return `REVIEW` when any of the following is true:
-- border consensus is insufficient;
-- metadata candidate is absent or ambiguous;
-- badge anchor/shape evidence is insufficient;
-- contact exists outside approved metadata/corner region;
-- contact localization is unavailable for an overlap case;
-- border/metadata masks use inconsistent coordinate spaces;
-- planned deletion exceeds configured safety bounds;
-- same/near-border-color artwork may be removed;
-- source transparency provenance is missing or mutable.
+Return `REVIEW` for insufficient border consensus/support/purity, ambiguous metadata, weak shape evidence, selected metadata escaping anchor via non-excluded connectivity, unexplained contact, mismatched coordinate/mask identity, excessive deletion, possible same-color artwork loss, missing provenance, or any unresolved local association.
+
+## Prohibited Shortcuts
+- lowering global thresholds merely to improve automation rate;
+- global color-key deletion;
+- deleting whole anchor/search boxes;
+- convex hull / bounding-box fill;
+- broad morphology to reconnect badge fragments;
+- treating all fragments of one raw pre-exclusion topology as metadata;
+- using cleanup-generated alpha to redefine source route.
 
 ## Required Regression Tests
 At minimum:
-1. transparent outer padding + inset border + no contact → existing safe border path remains PASS;
-2. inset border + same-color artwork contact away from metadata anchor → REVIEW;
-3. anchored badge touching top/left border and no other contact → joint plan may become SAFE only after contact-localization evidence is implemented;
-4. anchored badge + unrelated artwork contact on another side → REVIEW;
-5. two plausible anchored badges → REVIEW;
-6. non-anchored artwork inside broad metadata zone → preserved;
-7. badge absent → no metadata deletion;
-8. cleanup-generated alpha never changes source route;
-9. combined plan mask is bounded and deterministic;
-10. repeated execution produces identical mask/hash for deterministic providers;
-11. exclusion-aware shape confidence may use only same-topology overlap pixels inside the candidate bbox and must not expand the metadata deletion mask.
+1. transparent outer padding + inset rounded border + no contact;
+2. rounded border with transparent corners and high visible color purity;
+3. insufficient visible support despite high color purity → REVIEW;
+4. same-color artwork contact away from metadata anchor → REVIEW;
+5. anchored badge touching top/left border with all contact explained;
+6. badge and remote artwork share pre-exclusion topology only through border mask; post-exclusion badge isolated and remote artwork preserved;
+7. selected anchored component has non-excluded path outside anchor → REVIEW;
+8. multiple competing anchored candidates → REVIEW;
+9. non-anchored artwork inside broad metadata search zone is preserved;
+10. badge absent → no metadata deletion;
+11. enclosed numeral/detail completion does not fill exterior regions;
+12. cleanup-generated alpha never changes source route;
+13. combined plan mask is bounded and deterministic;
+14. repeated execution produces identical mask/hash;
+15. exclusion-aware shape confidence does not expand deletion mask or lower policy threshold.
 
 ## Tier-B Gate Rule
-Tier-B corpus evidence must record:
-- source SHA-256 (without committing private/user image bytes unless explicitly approved);
-- frame extraction evidence;
-- source transparency provenance;
-- border geometry/contact localization evidence;
-- metadata evidence;
-- joint plan status/reasons;
-- final per-frame PASS/REVIEW/FAIL result.
+Tier-B corpus evidence records source hash, extraction evidence, source-transparency provenance, border geometry/support/purity/contact evidence, metadata/isolation evidence, joint-plan status/reasons, and per-frame result. High REVIEW rate is acceptable while evidence is incomplete; weakening policy merely to improve automation rate is not acceptable.
 
-A high REVIEW rate is acceptable while safety evidence is incomplete. It is not acceptable to weaken policy merely to improve automation rate.
+Current representative findings are captured in `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`.
 
 ## Repository Hygiene
 - production/user source images are not committed by default;
-- synthetic regression fixtures are generated in tests when practical;
+- synthetic regression fixtures are generated in tests where practical;
 - no runtime output/log/database/cache is committed;
-- joint-cleanup experiments remain outside tracked runtime directories until accepted by SSOT/test gates;
-- temporary algorithms must not coexist as duplicate production paths.
+- temporary diagnostic harnesses stay outside tracked source/runtime directories;
+- duplicate experimental production paths are prohibited.
 
 ## Acceptance
-ADR-028 implementation is complete only when:
-- contact localization evidence exists;
-- `JointCleanupPlanner` has a stable headless contract;
-- safe and unsafe overlap regressions are automated;
-- existing M2 regressions remain green;
-- representative Tier-B cases improve without threshold relaxation;
-- Windows CI passes;
-- evidence is traceable through FrameResult/manifest;
-- PR #11 remains free of generated/private corpus bytes.
+ADR-028 implementation is complete only when contact localization, stable headless planning, safe/unsafe overlap regressions, representative Tier-B improvement, Windows CI, FrameResult/manifest evidence and repository hygiene are all verified. Owner acceptance remains a separate gate.
 
-References: `05_STICKER_SHEET_SPEC.md`, `35_INTERFACE_AND_STAGE_CONTRACTS.md`, `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`, ADR-005, ADR-008, ADR-023, ADR-024, ADR-026, ADR-027, Issue #12.
+References: `05_STICKER_SHEET_SPEC.md`, `35_INTERFACE_AND_STAGE_CONTRACTS.md`, `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`, `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`, ADR-005, ADR-008, ADR-023, ADR-024, ADR-026, ADR-027, Issue #12.

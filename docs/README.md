@@ -14,6 +14,7 @@ For a new development team, begin with:
 10. `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md` — coding/repository rules
 11. `58_SSOT_COVERAGE_AUDIT.md` — documentation readiness audit
 12. `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md` — live control-plane implementation status
+13. `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md` — current representative M2 Tier-B evidence and open findings
 
 ## SSOT Rule
 MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hierarchy defined in `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`.
@@ -65,6 +66,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `09_DATA_MODELS_AND_CONFIG.md`
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 - `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`
+- `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`
 
 ## Quality / Verification / Traceability
 - `06_QA_RULEBOOK.md`
@@ -77,6 +79,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
 - `54_RELEASE_AND_SIGNOFF_CHECKLIST.md`
 - `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
+- `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`
 
 ## UX / Distribution / Audit
 - `16_UI_UX_SPECIFICATION.md`
@@ -110,7 +113,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 
 ## Configuration
 - `configs/line_static.toml` — canonical LINE static export profile
-- TOML is the canonical human-maintained configuration format
+- TOML is canonical human-maintained configuration
 - JSON is used for machine-generated manifests/evidence where appropriate
 
 ## History
@@ -123,16 +126,17 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - Preserve original source and artwork safety over automation rate.
 - Python is the orchestration/control plane.
 - Depend on provider interfaces, not concrete engines.
-- TOML is the canonical configuration format.
-- All critical runtime paths go through PathManager/typed path references.
-- External/user-selected files are staged into a control-plane-owned immutable INPUT namespace before worker use; arbitrary source paths never become worker authority.
-- Workers compute only from approved immutable staged input and their private scratch; shared-state commit is centralized through MainBoard/ResourceBroker.
-- Batch and multi-worker execution must remain pauseable, resumable, recoverable and diagnosable.
-- Structured logs, checkpoints and durable state are first-class architecture requirements.
-- Scheduler runtime memory is disposable; restart reconstruction uses durable task descriptors and must not guess legacy task meaning.
-- Worker IPC uses explicit validated schemas; process transport must not leak critical business rules into worker or UI layers.
-- ExecuteTask is immutable; worker results are candidates until durable MainBoard authority accepts them.
-- A worker never selects final output destination or bypasses ADR-024 artifact commitment.
-- M2 image-processing algorithms remain behind the headless pipeline/provider boundary; platform worker code adapts contracts and does not duplicate image policy.
-- Border/metadata overlap is detected independently but cleanup is planned jointly before destructive mutation (ADR-028 / `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`).
-- Critical code must be designed for headless automated testing with injectable/replaceable dependencies and permanent regression coverage for reproducible defects.
+- TOML is canonical configuration.
+- All critical runtime paths go through PathManager/typed path refs.
+- External/user-selected files are staged into control-plane-owned immutable INPUT before worker use.
+- Workers compute only from approved immutable staged input and private scratch; shared-state commit is centralized through MainBoard/ResourceBroker.
+- Batch/multi-worker execution remains pauseable, resumable, recoverable and diagnosable.
+- Structured logs, checkpoints and durable state are first-class requirements.
+- Scheduler memory is disposable; restart reconstruction uses durable descriptors and never guesses legacy task meaning.
+- Worker IPC uses explicit validated schemas; transport does not own critical business rules.
+- ExecuteTask is immutable; worker results remain candidates until durable MainBoard authority accepts them.
+- Workers never select final output destination or bypass ADR-024 artifact commitment.
+- M2 algorithms remain behind the headless pipeline/provider boundary; platform code does not duplicate image policy.
+- Border/metadata overlap is detected independently but cleanup is planned jointly before destructive mutation (ADR-028).
+- Tier-B evidence must change evidence models through SSOT/regression, never through ad-hoc threshold weakening.
+- Critical code is designed for headless automated testing with injectable/replaceable dependencies and permanent regression coverage for reproducible defects.
