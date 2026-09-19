@@ -11,6 +11,7 @@ _SAFE_ID_CHARS = frozenset(
 
 class PathKind(StrEnum):
     JOB_ROOT = "job_root"
+    INPUT = "input"
     WORKER_SCRATCH = "worker_scratch"
     OUTPUT = "output"
     EVIDENCE = "evidence"
@@ -57,6 +58,10 @@ class PathManager:
     def job_root(self, job_id: str) -> PathRef:
         return PathRef(PathKind.JOB_ROOT, self._job_root_path(job_id), job_id)
 
+    def input(self, job_id: str, filename: str) -> PathRef:
+        safe_name = self._validate_filename(filename)
+        return PathRef(PathKind.INPUT, self._job_root_path(job_id) / "inputs" / safe_name, job_id)
+
     def worker_scratch(self, job_id: str, worker_id: str) -> PathRef:
         safe_worker = self._validate_id(worker_id, "worker_id")
         return PathRef(
@@ -94,7 +99,7 @@ class PathManager:
 
     def prepare_job(self, job_id: str) -> PathRef:
         root = self.job_root(job_id)
-        for name in ("outputs", "evidence", "logs", "scratch"):
+        for name in ("inputs", "outputs", "evidence", "logs", "scratch"):
             (root.path / name).mkdir(parents=True, exist_ok=True)
         return root
 
