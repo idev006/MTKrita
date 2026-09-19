@@ -62,6 +62,7 @@ def test_mainboard_composes_services_without_business_logic(tmp_path: Path) -> N
     assert board.logs is not None
     assert board.diagnostics is not None
     assert board.leases is not None
+    assert board.workers is not None
     assert board.lifecycle.jobs is store
     assert board.recovery.jobs is store
     assert board.artifact_journal is not None
