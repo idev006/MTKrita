@@ -26,33 +26,73 @@ MVP รองรับ 2 rows × 5 columns = 10 frames แต่โครงส�
 - มี semi-transparent antialiased edges
 
 ### PR-006 Opaque Background Processing
-ต้องสามารถสร้าง foreground mask และ alpha output จาก input ที่ไม่มี transparency
+ต้องสามารถสร้าง foreground mask และ alpha output จาก input ที่ไม่มี transparency โดยกรณี confidence ต่ำต้องส่ง REVIEW แทนการลบ foreground แบบเดา
 
 ### PR-007 Content Analysis
 ต้องวัด content bounding box, connected components, edge contact, occupancy และ noise
 
 ### PR-008 Safe Auto-Fix
-อนุญาตเฉพาะ operation ที่ไม่ทำลายเนื้อหา เช่น recenter, proportional scale, add transparent canvas และ remove confident noise
+อนุญาตเฉพาะ operation ที่ไม่ทำลายเนื้อหา เช่น recenter, proportional scale, add transparent canvas และ remove high-confidence noise
 
 ### PR-009 QA States
-ทุก frame ต้องมีหนึ่งในสถานะ:
-- `PASS`
-- `AUTO_FIXED`
-- `REVIEW`
-- `FAIL`
-
-พร้อมเหตุผล
+ทุก frame ต้องมีหนึ่งในสถานะ `PASS`, `AUTO_FIXED`, `REVIEW`, `FAIL` พร้อมเหตุผลและ measurements ที่เกี่ยวข้อง
 
 ### PR-010 Export
-ต้อง export PNG, preserve alpha, ใช้ RGB/RGBA และ filename scheme ที่ deterministic
+ต้อง export PNG, preserve alpha, ใช้ RGB/RGBA และ deterministic filename scheme ตาม export profile
 
 ### PR-011 Reporting
-ต้องมี JSON report สำหรับเครื่อง และ summary สำหรับคน
+ต้องมี machine-readable report และ human-readable summary พร้อม actions/findings ต่อ frame
+
+### PR-012 Adaptive Border Detection and Removal
+หลัง split เป็น frame ระบบต้องตรวจ border รายเฟรม และรองรับ border ที่มี:
+- สีต่างกัน
+- ความหนาต่างกัน
+- ความหนาแต่ละด้านไม่เท่ากัน
+- anti-alias / blur จากการ resize
+- border ไม่ครบทุกด้าน
+
+การตัดสิน border ต้องใช้ position/continuity/geometry/connectivity และ confidence ไม่ใช่ลบด้วยสีเพียงอย่างเดียว หาก border แตะ artwork และแยกไม่มั่นใจ ต้อง `REVIEW` โดยห้าม silent destructive removal
+
+### PR-013 Quality-Preserving Image Processing
+- lossless-first internal flow
+- หลีกเลี่ยง repeated resize
+- preserve aspect ratio
+- preserve semi-transparent anti-aliased edges
+- no default upscaling
+- final resize เมื่อจำเป็นควรเกิดเพียงครั้งเดียวเท่าที่เป็นไปได้
+- ห้าม recompress เป็น JPEG ระหว่าง processing โดยไม่มีเหตุผลที่ระบุ
+
+### PR-014 Original Preservation
+ต้นฉบับต้อง immutable โดย default และ output ต้องเขียนไปยัง job/output location แยกต่างหาก
+
+### PR-015 Windows 11 Distribution
+ผู้ใช้ปลายทางต้องสามารถติดตั้ง/ใช้งาน core application บน Windows 11 x64 โดยไม่ต้องติดตั้ง Python/OpenCV/developer toolchain ด้วยตนเอง ต้องมี standalone installer เป็นเป้าหมาย production และ portable build สำหรับ test/technical use
+
+### PR-016 Exception-First Review UX
+UI ต้องทำให้ผู้ใช้ตรวจ `REVIEW/FAIL` เป็นหลัก และให้ preview source/mask/border-removal/final output ก่อนอนุมัติ operation ที่มีความเสี่ยง
 
 ## Non-functional Requirements
 
-- Reproducible: input + config + engine version เดียวกันต้องให้ผลลัพธ์เดิม
-- Auditable: ทุก auto-fix ต้อง log
-- Safe: ห้าม overwrite ต้นฉบับโดย default
-- CPU-first MVP: ไม่บังคับ GPU
-- Extensible: LINE-specific requirements ต้องแยกเป็น export profile
+### NFR-001 Reproducibility
+Input + config + engine version เดียวกันต้องให้ผลลัพธ์ equivalent/deterministic สำหรับ deterministic stages
+
+### NFR-002 Auditability
+ทุก auto-fix และ processing strategy ต้อง log ได้ว่าทำอะไร เพราะเหตุใด และใช้ค่าใด
+
+### NFR-003 Safety
+ห้าม overwrite ต้นฉบับโดย default และห้าม silently delete uncertain foreground
+
+### NFR-004 CPU-first MVP
+MVP ต้องไม่บังคับ GPU
+
+### NFR-005 Extensibility
+LINE-specific requirements ต้องแยกเป็น export profile และ third-party engines ต้องถูกซ่อนหลัง adapters
+
+### NFR-006 Maintainability
+Critical image-processing logic ต้องแยก module, testable และไม่ผูกกับ UI
+
+### NFR-007 Portability
+Core processing ต้อง headless-capable; Krita เป็น optional integration ไม่ใช่ runtime requirement ของ core MVP
+
+### NFR-008 Quality Evidence
+Critical release behavior ต้องมี objective verification evidence และ requirement-to-test traceability
