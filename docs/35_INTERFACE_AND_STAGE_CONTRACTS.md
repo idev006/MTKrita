@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.2
+SSOT — Stage Contract Baseline v1.3
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -57,7 +57,7 @@ Every replaceable provider should expose:
 ## S-03 Frame Extraction
 **Provider boundary:** `FrameExtractionProvider` where replacement is useful; otherwise MTKrita core service  
 **Input:** source image + approved geometry  
-**Output:** ordered extracted frames + source boxes  
+**Output:** ordered extracted frames + source boxes + extraction method/confidence  
 **Invariant:** extraction uses source pixels; no resampling unless explicitly required  
 **Failure:** frame count/geometry mismatch
 
@@ -65,9 +65,10 @@ Every replaceable provider should expose:
 **Provider boundary:** `BorderProcessingProvider`  
 **Input:** extracted frame  
 **Output:** border detection + cleaned/unchanged frame  
-**Evidence:** side, thickness, color/range, continuity, confidence  
-**Review:** border/artwork ambiguity  
-**Prohibited:** global color deletion
+**Evidence:** side, thickness, color/range, continuity, confidence, inner-edge contact risk  
+**Review:** border/artwork ambiguity or same/near-border-color content touching the inner border boundary  
+**Prohibited:** global color deletion; automatic crop when border/artwork contact risk is detected  
+**Rule:** high outer-edge confidence alone is insufficient when topology/contact evidence indicates possible artwork loss
 
 ## S-05 Source Transparency Classification
 **Domain service:** MTKrita-owned routing/provenance service  
@@ -125,21 +126,19 @@ Every replaceable provider should expose:
 
 ## S-13 Export
 **Provider boundary:** `ExportProvider`  
-**Input:** QA-eligible frame + export profile  
-**Output:** PNG artifact + hash/metadata  
-**Rules:** deterministic naming; preserve alpha; validate profile; no unrelated overwrite
+**Input:** QA-eligible frame + export profile + pre-resolved target reference  
+**Output:** PNG artifact + SHA-256 + byte size  
+**Rules:** deterministic naming; preserve alpha; validate profile; no unrelated overwrite; atomic commit where supported
 
 ## S-14 Manifest/Evidence
 **Domain service:** MTKrita-owned serializer/evidence model  
 **Input:** job/frame/stage outcomes  
 **Output:** machine-readable manifest + summary  
 **Invariant:** sufficient traceability to source/config/version  
-**Required provenance:** source transparency decision, metadata cleanup alpha contribution, background-removal alpha contribution, final alpha state
+**Required provenance:** extraction method/confidence, source transparency decision, metadata cleanup evidence, significant actions/findings, final output reference/hash
 
 ## Provider Registry / Factory
 Provider selection shall be resolved during job initialization from validated TOML configuration.
-
-Conceptual flow:
 
 ```text
 TOML config
@@ -153,7 +152,7 @@ Resolve interface → concrete provider
 Inject providers into Pipeline/JobController
 ```
 
-The core pipeline must not use scattered `if provider == "opencv"` logic. Provider-specific selection belongs in one composition/registry layer.
+The core pipeline must not use scattered provider-name branching. Provider-specific selection belongs in one composition/registry layer.
 
 ## Provider Contract Principles
 A provider must:
