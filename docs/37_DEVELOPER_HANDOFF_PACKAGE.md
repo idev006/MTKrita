@@ -1,7 +1,7 @@
 # MTKrita Developer Handoff Package
 
 ## Status
-SSOT — Developer Handoff Baseline v1.0
+SSOT — Developer Handoff Baseline v1.1
 
 ## Purpose
 เอกสารนี้เป็นจุดเริ่มต้นสำหรับทีมพัฒนา MTKrita เพื่อให้สามารถรับช่วงงานต่อได้โดยไม่ต้องตีความ requirement, architecture, workflow, quality gate หรือ acceptance criteria ใหม่จากศูนย์
@@ -18,9 +18,10 @@ SSOT — Developer Handoff Baseline v1.0
 8. `30_SEQUENCE_DIAGRAMS.md`
 9. `31_STATE_MACHINE_SPEC.md`
 10. `35_INTERFACE_AND_STAGE_CONTRACTS.md`
-11. `20_REQUIREMENTS_TRACEABILITY_MATRIX.md`
-12. `14_SOFTWARE_TEST_STRATEGY.md`
-13. `22_DEFINITION_OF_DONE.md`
+11. `16_UI_UX_SPECIFICATION.md`
+12. `20_REQUIREMENTS_TRACEABILITY_MATRIX.md`
+13. `14_SOFTWARE_TEST_STRATEGY.md`
+14. `22_DEFINITION_OF_DONE.md`
 
 ## Current Delivery State
 - M0 Documentation Baseline — complete
@@ -53,13 +54,29 @@ Sticker Sheet
 ## Architectural Principles
 - Python is the orchestration/control plane.
 - Third-party engines/providers are implementation details behind replaceable interfaces.
-- Domain rules belong in MTKrita, not in UI or a provider-specific script.
+- Domain rules belong in MTKrita application/domain services, not in UI or provider-specific scripts.
+- UI is a replaceable presentation shell and the engine must remain headless-capable.
+- UI communicates through application/MainBoard contracts and never owns worker/provider/shared-resource logic.
+- PathManager/typed refs control runtime paths.
+- Shared mutable resources are brokered centrally.
 - Content safety outranks automation rate.
 - `REVIEW` is preferred over destructive guessing.
 - Source input is immutable by default.
 - Lossless-first processing is mandatory.
 - No default upscaling.
 - Already-transparent frames must not be re-segmented by default.
+
+## UI Handoff Rules
+For any desktop UI implementation:
+- follow OS theme and DPI conventions by default;
+- all user-visible numeric values use Arabic numerals 0-9;
+- prefer combo boxes, sliders, range sliders, presets and visual previews over free-form technical input;
+- keep normal workflow simple enough for non-technical users;
+- expose advanced/diagnostic details through progressive disclosure;
+- no authoritative validation, QA policy, stage order, provider choice, path construction, persistence or recovery logic belongs exclusively in the UI;
+- the same critical behavior must be reproducible through headless/CLI application paths.
+
+Authoritative UI/UX behavior: `16_UI_UX_SPECIFICATION.md`, ADR-021.
 
 ## Required Developer Behaviors
 Before implementing a critical change:
@@ -77,6 +94,8 @@ Before implementing a critical change:
 - silently crop foreground;
 - overwrite source assets;
 - put business rules only in GUI code;
+- make UI call concrete image-processing providers/workers/shared stores directly;
+- construct shared runtime paths directly in UI/worker modules;
 - bypass QA state routing;
 - change output contract without updating SSOT;
 - merge a critical change without objective verification evidence.
@@ -126,4 +145,5 @@ The package is considered sufficient for developer onboarding when a developer c
 - safe/unsafe behavior,
 - expected outputs,
 - tests required,
+- UI/domain ownership boundaries,
 - gate needed to finish.
