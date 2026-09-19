@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 from mtkrita.job_store import JobStore
@@ -71,3 +72,148 @@ def test_job_store_requires_prepared_parent(tmp_path: Path) -> None:
         assert "parent directory" in str(exc)
     else:
         raise AssertionError("expected unprepared parent rejection")
+
+
+def test_job_store_migrates_v1_to_v2_without_losing_jobs(tmp_path: Path) -> None:
+    path = tmp_path / "jobs.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        """
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata(key, value) VALUES('schema_version', '1');
+        CREATE TABLE jobs (
+            job_id TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            source_hash TEXT,
+            config_hash TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE events (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            event_code TEXT NOT NULL,
+            from_state TEXT,
+            to_state TEXT,
+            generation INTEGER NOT NULL,
+            occurred_at TEXT NOT NULL,
+            detail_json TEXT NOT NULL
+        );
+        INSERT INTO jobs VALUES('job-legacy', 'READY', 2, 'src', 'cfg', 't0', 't1');
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    store = JobStore(path)
+    store.initialize()
+
+    assert store.get_job("job-legacy").state == "READY"
+    migrated = sqlite3.connect(path)
+    version = migrated.execute(
+        "SELECT value FROM metadata WHERE key = 'schema_version'"
+    ).fetchone()
+    task_table = migrated.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tasks'"
+    ).fetchone()
+    migrated.close()
+    assert version == ("2",)
+    assert task_table == ("tasks",)
+
+
+def test_task_attempt_and_lease_state_persist_across_reopen(tmp_path: Path) -> None:
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path)
+    store.initialize()
+    store.create_job("job-1")
+    created = store.create_task("task-01", job_id="job-1")
+    assert created.state == "PENDING"
+    assert created.attempt == 0
+
+    assigned = store.assign_task(
+        "task-01",
+        expected_generation=0,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+    assert assigned.state == "RUNNING"
+    assert assigned.attempt == 1
+    assert assigned.generation == 1
+
+    reopened = JobStore(path)
+    reopened.initialize()
+    persisted = reopened.get_task("task-01")
+    assert persisted == assigned
+    assert reopened.list_tasks("job-1", state="RUNNING") == (assigned,)
+
+
+def test_task_store_rejects_stale_attempt_and_worker_completion(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.initialize()
+    store.create_job("job-1")
+    store.create_task("task-01", job_id="job-1")
+    running = store.assign_task(
+        "task-01",
+        expected_generation=0,
+        worker_id="worker-new",
+        attempt=2,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+
+    try:
+        store.finish_task(
+            "task-01",
+            expected_generation=running.generation,
+            worker_id="worker-old",
+            attempt=1,
+            new_state="SUCCEEDED",
+            event_code="TASK.SUCCEEDED",
+        )
+    except RuntimeError as exc:
+        assert "stale or invalid" in str(exc)
+    else:
+        raise AssertionError("expected stale completion rejection")
+
+    current = store.get_task("task-01")
+    assert current.state == "RUNNING"
+    assert current.worker_id == "worker-new"
+    assert current.attempt == 2
+
+
+def test_task_lease_renewal_requires_authoritative_attempt(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.initialize()
+    store.create_job("job-1")
+    store.create_task("task-01", job_id="job-1")
+    running = store.assign_task(
+        "task-01",
+        expected_generation=0,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+
+    renewed = store.renew_task_lease(
+        "task-01",
+        expected_generation=running.generation,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:02:00+00:00",
+    )
+    assert renewed.generation == 2
+    assert renewed.lease_expires_at == "2030-01-01T00:02:00+00:00"
+
+    try:
+        store.renew_task_lease(
+            "task-01",
+            expected_generation=renewed.generation,
+            worker_id="worker-1",
+            attempt=0,
+            lease_expires_at="2030-01-01T00:03:00+00:00",
+        )
+    except RuntimeError as exc:
+        assert "stale or invalid" in str(exc)
+    else:
+        raise AssertionError("expected stale lease renewal rejection")
