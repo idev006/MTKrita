@@ -29,7 +29,7 @@ def _validate_zone(zone: MetadataZone) -> None:
 def detect_corner_metadata(
     image: Image.Image,
     *,
-    zone: MetadataZone = MetadataZone(),
+    zone: MetadataZone | None = None,
     color_tolerance: int = 24,
     min_area_ratio: float = 0.002,
     max_area_ratio: float = 0.30,
@@ -41,14 +41,15 @@ def detect_corner_metadata(
     that differ from that background. Ambiguous candidates are rejected rather than
     removed automatically.
     """
-    _validate_zone(zone)
+    resolved_zone = zone or MetadataZone()
+    _validate_zone(resolved_zone)
     if not 0 <= color_tolerance <= 255:
         raise ValueError("color_tolerance must be between 0 and 255")
 
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
     height, width = rgba.shape[:2]
-    zone_width = max(1, round(width * zone.x_fraction))
-    zone_height = max(1, round(height * zone.y_fraction))
+    zone_width = max(1, round(width * resolved_zone.x_fraction))
+    zone_height = max(1, round(height * resolved_zone.y_fraction))
 
     rgb = rgba[:, :, :3].astype(np.int16)
     alpha = rgba[:, :, 3]
