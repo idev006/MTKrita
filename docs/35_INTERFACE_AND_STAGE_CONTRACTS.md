@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.5
+SSOT — Stage Contract Baseline v1.6
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -65,13 +65,13 @@ Every replaceable provider should expose:
 **Provider boundary:** `BorderProcessingProvider`  
 **Input:** extracted frame  
 **Output:** border detection + cleaned/unchanged frame  
-**Evidence:** side, inset offset from frame edge, thickness, color/range, continuity, confidence, inner-edge contact risk  
+**Evidence:** side, inset offset from frame edge, thickness, color/range, continuity, confidence, inner-edge contact risk, contact fraction and localized contact ranges  
 **Review:** border/artwork or border/metadata ambiguity; same/near-border-color content touching the inner border boundary  
 **Prohibited:** global color deletion; automatic crop when border/artwork or border/metadata contact risk is detected  
 **Rule:** a border may begin at offset 0 or after bounded transparent/empty near-edge padding  
 **Rule:** inset-border fallback requires multi-side consensus (or equivalently strong topology evidence); a single candidate strip cannot authorize destructive crop  
 **Rule:** high strip/color confidence alone is insufficient when topology/contact evidence indicates possible artwork loss  
-**Rule:** detecting an inset border with contact risk is useful evidence but must remain `REVIEW` until a separately approved joint-cleanup contract exists
+**Rule:** detecting an inset border with contact risk is useful evidence but must remain `REVIEW` unless S-06A produces an approved joint cleanup plan
 
 ## S-05 Source Transparency Classification
 **Domain service:** MTKrita-owned routing/provenance service  
@@ -95,8 +95,22 @@ Every replaceable provider should expose:
 **Rule:** detection may run without mutation for diagnostics/planning; destructive cleanup occurs only after the stage policy authorizes it  
 **Important:** metadata detection/removal must not redefine source transparency provenance
 
+## S-06A Joint Border + Metadata Cleanup Planning
+**Domain service:** `JointCleanupPlanner`  
+**Input:** immutable source-transparency provenance + border geometry/contact evidence + metadata detection/mask evidence + frame geometry  
+**Output:** immutable `JointCleanupPlan` with status `SAFE_PLAN` or `REVIEW`  
+**Required evidence:** explained/unexplained contact ranges or fractions, combined planned deletion mask, planned removed-pixel count/ratio, reasons and confidence  
+**SAFE_PLAN rule:** all risky border contact must be explainable by approved metadata/corner geometry; any unexplained contact causes `REVIEW`  
+**SAFE_PLAN rule:** border and metadata evidence must each meet their automatic policy thresholds independently; the planner does not raise weak detector confidence  
+**Deletion scope rule:** the combined mask is bounded to approved spatial border bands plus approved metadata mask; no global color key is permitted  
+**Coordinate rule:** all evidence/masks are validated in one pre-cleanup frame coordinate space  
+**Mutation rule:** planner construction is non-destructive; applying a plan is a separate operation and may occur only for `SAFE_PLAN`  
+**Determinism rule:** deterministic inputs/configuration must produce the same plan mask/evidence hash  
+**Prohibited:** using joint planning to bypass source-transparency provenance, unexplained artwork contact, metadata ambiguity or configured safety bounds  
+**Reference:** `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md` / ADR-028
+
 ## S-07 Transparent-Route Cleanup
-**Input:** source-transparent frame + approved metadata cleanup plan  
+**Input:** source-transparent frame + approved metadata or joint cleanup plan  
 **Output:** cleaned RGBA preserving source alpha semantics  
 **Rule:** no background segmentation by default
 
@@ -144,7 +158,7 @@ Every replaceable provider should expose:
 **Input:** job/frame/stage outcomes  
 **Output:** machine-readable manifest + summary  
 **Invariant:** sufficient traceability to source/config/version  
-**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup evidence, significant actions/findings, final output reference/hash
+**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup evidence, joint-cleanup plan evidence when used, significant actions/findings, final output reference/hash
 
 ## Provider Registry / Factory
 Provider selection shall be resolved during job initialization from validated TOML configuration.
@@ -182,4 +196,4 @@ Breaking changes to stage/provider contracts require:
 - regression update
 - migration note where persisted manifests/artifacts are affected
 
-References: `29_UML_SYSTEM_MODEL.md`, `27_END_TO_END_WORKFLOW_SPEC.md`, `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`, `44_PROVIDER_INTERFACE_ARCHITECTURE.md`, ADR-015, ADR-016 and ADR-023.
+References: `29_UML_SYSTEM_MODEL.md`, `27_END_TO_END_WORKFLOW_SPEC.md`, `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`, `44_PROVIDER_INTERFACE_ARCHITECTURE.md`, `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`, ADR-015, ADR-016, ADR-023 and ADR-028.
