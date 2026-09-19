@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from mtkrita.event_bus import InProcessEventBus
@@ -58,6 +59,7 @@ def test_mainboard_composes_services_without_business_logic(tmp_path: Path) -> N
     assert board.jobs is store
     assert board.events is bus
     assert board.resources is not None
+    assert board.logs is not None
     assert board.leases is not None
     assert board.lifecycle.jobs is store
     assert board.recovery.jobs is store
@@ -69,3 +71,29 @@ def test_mainboard_composes_services_without_business_logic(tmp_path: Path) -> N
     assert board.artifact_recovery.jobs is store
     assert board.startup_recovery.artifact_commits is board.artifact_recovery
     assert board.startup_recovery.jobs is board.recovery
+
+
+def test_mainboard_centrally_logs_event_bus_messages(tmp_path: Path) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    store = JobStore(paths.evidence("job-1", "jobs.sqlite3").path)
+    store.initialize()
+    board = MainBoard.compose(paths=paths, jobs=store)
+    event = MessageEnvelope.create(
+        kind=MessageKind.EVENT,
+        message_type="TaskStarted",
+        job_id="job-1",
+        correlation_id="corr-1",
+        task_id="task-1",
+        worker_id="worker-1",
+        attempt=2,
+    )
+
+    board.events.publish(event)
+
+    payload = json.loads(paths.log("job-1").path.read_text(encoding="utf-8").strip())
+    assert payload["code"] == "TaskStarted"
+    assert payload["correlation_id"] == "corr-1"
+    assert payload["task_id"] == "task-1"
+    assert payload["worker_id"] == "worker-1"
+    assert payload["attempt"] == 2
