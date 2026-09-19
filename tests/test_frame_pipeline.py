@@ -95,3 +95,26 @@ def test_frame_result_serialization_retains_evidence() -> None:
     assert payload["evidence"]["route_provenance"] == "pre_metadata_frame"
     assert "providers" in payload
     assert "output_sha256" in payload
+
+
+def test_border_contact_risk_routes_to_review_without_crop() -> None:
+    border_color = (20, 120, 230, 255)
+    image = Image.new("RGBA", (80, 60), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    for offset in range(4):
+        draw.rectangle((offset, offset, 79 - offset, 59 - offset), outline=border_color)
+    draw.rectangle((4, 20, 15, 35), fill=border_color)
+
+    output = process_frame(
+        image,
+        index=5,
+        row=0,
+        column=4,
+        config=FramePipelineConfig(remove_metadata=False),
+    )
+
+    assert output.result.status == FrameStatus.REVIEW
+    assert output.result.evidence["border_contact_risk"] is True
+    assert "REMOVE_BORDER" not in output.result.actions
+    assert output.image.size == image.size
+    assert any(finding.code == "BORDER.CONTACT_RISK" for finding in output.result.findings)
