@@ -7,7 +7,10 @@ def _framed(size: tuple[int, int], color: tuple[int, int, int, int], width: int)
     image = Image.new("RGBA", size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     for offset in range(width):
-        draw.rectangle((offset, offset, size[0] - 1 - offset, size[1] - 1 - offset), outline=color)
+        draw.rectangle(
+            (offset, offset, size[0] - 1 - offset, size[1] - 1 - offset),
+            outline=color,
+        )
     return image
 
 
@@ -25,6 +28,7 @@ def test_detects_different_border_colors_and_widths() -> None:
 def test_high_confidence_border_can_be_removed() -> None:
     image = _framed((64, 64), (20, 120, 230, 255), 4)
     detection = detect_border(image)
+    assert detection.contact_risk is False
     result = remove_border(image, detection)
     assert result.size == (56, 56)
 
@@ -41,3 +45,30 @@ def test_transparent_outer_edge_is_not_mistaken_for_black_border() -> None:
     ImageDraw.Draw(image).rectangle((10, 10, 29, 29), fill=(0, 0, 0, 255))
     detection = detect_border(image)
     assert detection.detected is False
+
+
+def test_same_color_artwork_away_from_border_is_safe() -> None:
+    color = (20, 120, 230, 255)
+    image = _framed((80, 60), color, 4)
+    ImageDraw.Draw(image).rectangle((20, 20, 35, 35), fill=color)
+    detection = detect_border(image)
+    assert detection.contact_risk is False
+    result = remove_border(image, detection)
+    assert result.size == (72, 52)
+
+
+def test_same_color_artwork_touching_inner_border_requires_review() -> None:
+    color = (20, 120, 230, 255)
+    image = _framed((80, 60), color, 4)
+    ImageDraw.Draw(image).rectangle((4, 20, 15, 35), fill=color)
+    detection = detect_border(image)
+    assert detection.left is not None
+    assert detection.left.contact_risk is True
+    assert detection.contact_risk is True
+
+    try:
+        remove_border(image, detection)
+    except ValueError as exc:
+        assert "contact risk" in str(exc)
+    else:
+        raise AssertionError("expected conservative border removal refusal")
