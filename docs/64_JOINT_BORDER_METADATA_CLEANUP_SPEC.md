@@ -1,7 +1,7 @@
 # Joint Border + Metadata Cleanup Specification
 
 ## Status
-SSOT — Joint Cleanup Safety Contract v1.0
+SSOT — Joint Cleanup Safety Contract v1.1
 
 ## Decision Record — ADR-028
 **Title:** Joint Border/Metadata Cleanup Is Planned Before Destructive Mutation  
@@ -95,6 +95,20 @@ Automatic joint cleanup is permitted only when **all** required conditions hold:
    - all masks/rectangles use the same pre-cleanup frame coordinate space;
    - crop/translation is not applied between detector outputs and plan validation.
 
+## Exclusion-Aware Metadata Shape Confidence
+When an approved spatial border mask is used only as an **analysis exclusion**, it may remove pixels that are physically part of the badge/border overlap and therefore lower the apparent fill ratio of the remaining metadata fragments.
+
+MTKrita may reconstruct **shape evidence only** for a safely associated joint-cleanup candidate under all of these restrictions:
+- overlap evidence is limited to pixels belonging to the same proven raw-topology group as the selected metadata candidate;
+- only approved exclusion pixels that fall inside the reconstructed candidate bbox may contribute to analysis fill/shape confidence;
+- these overlap pixels never enter the metadata deletion mask;
+- overlap pixels remain owned by the exact border mask whose hash/identity is checked by `JointCleanupPlanner`;
+- the automatic metadata confidence threshold is not lowered;
+- unresolved association, competing candidates, out-of-anchor fragments or mismatched exclusion identity still cause `REVIEW`;
+- evidence records the count of exclusion-overlap pixels used only for shape scoring.
+
+This rule corrects confidence distortion caused by an approved analysis exclusion without expanding the destructive deletion scope.
+
 ## Preferred Mutation Strategy
 For overlap cases, the preferred M2 strategy is **mask-first cleanup**, not sequential crop-first cleanup:
 
@@ -181,7 +195,8 @@ At minimum:
 7. badge absent → no metadata deletion;
 8. cleanup-generated alpha never changes source route;
 9. combined plan mask is bounded and deterministic;
-10. repeated execution produces identical mask/hash for deterministic providers.
+10. repeated execution produces identical mask/hash for deterministic providers;
+11. exclusion-aware shape confidence may use only same-topology overlap pixels inside the candidate bbox and must not expand the metadata deletion mask.
 
 ## Tier-B Gate Rule
 Tier-B corpus evidence must record:
