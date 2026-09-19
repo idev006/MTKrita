@@ -79,11 +79,12 @@ class CandidateResultCoordinator:
             return self._accept_success(task, result)
         if result.artifacts:
             raise CandidateResultError("non-success candidate must not publish artifacts")
+        worker_id = self._require_worker_id(task)
         if result.status == TaskCandidateStatus.REVIEW:
             updated = self._jobs.finish_task(
                 task.task_id,
                 expected_generation=task.generation,
-                worker_id=task.worker_id or "",
+                worker_id=worker_id,
                 attempt=task.attempt,
                 new_state="REVIEW",
                 event_code="TASK.REVIEW_FROM_WORKER_CANDIDATE",
@@ -92,7 +93,7 @@ class CandidateResultCoordinator:
             updated = self._jobs.finish_task(
                 task.task_id,
                 expected_generation=task.generation,
-                worker_id=task.worker_id or "",
+                worker_id=worker_id,
                 attempt=task.attempt,
                 new_state="FAILED",
                 event_code="TASK.FAILED_FROM_WORKER_CANDIDATE",
@@ -108,15 +109,16 @@ class CandidateResultCoordinator:
         if len(result.artifacts) != 1:
             raise CandidateResultError("success candidate requires exactly one primary artifact")
         artifact = result.artifacts[0]
-        worker_id = task.worker_id
-        if worker_id is None:
-            raise CandidateResultError("RUNNING task has no worker identity")
+        worker_id = self._require_worker_id(task)
 
         source = self._paths.worker_file(task.job_id, worker_id, artifact.filename)
-        candidate = self._resources.validate_worker_file(
-            source,
-            expected_sha256=artifact.sha256,
-        )
+        try:
+            candidate = self._resources.validate_worker_file(
+                source,
+                expected_sha256=artifact.sha256,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            raise CandidateResultError(str(exc)) from exc
         if candidate.byte_size != artifact.byte_size:
             raise CandidateResultError("artifact byte-size mismatch")
 
@@ -171,6 +173,12 @@ class CandidateResultCoordinator:
         return task
 
     @staticmethod
+    def _require_worker_id(task: TaskRecord) -> str:
+        if task.worker_id is None:
+            raise CandidateResultError("RUNNING task has no worker identity")
+        return task.worker_id
+
+    @staticmethod
     def _validate_target(task: TaskRecord, target: PathRef) -> None:
         if target.job_id != task.job_id:
             raise CandidateResultError("candidate target resolver returned cross-job target")
@@ -180,9 +188,7 @@ class CandidateResultCoordinator:
             raise CandidateResultError("authoritative candidate target must not be worker-owned")
 
     def _release_runtime(self, task: TaskRecord) -> None:
-        worker_id = task.worker_id
-        if worker_id is None:
-            raise CandidateResultError("accepted task has no worker identity")
+        worker_id = self._require_worker_id(task)
         self._leases.discard(task.task_id, worker_id=worker_id, attempt=task.attempt)
         self._workers.release_task(worker_id, task_id=task.task_id, attempt=task.attempt)
         if self._inflight is not None:
