@@ -119,6 +119,10 @@ def test_border_contact_risk_routes_to_review_without_crop() -> None:
 
     assert output.result.status == FrameStatus.REVIEW
     assert output.result.evidence["border_contact_risk"] is True
+    sides = output.result.evidence["border_sides"]
+    assert isinstance(sides, dict)
+    assert sides["left"]["contact_fraction"] > 0
+    assert sides["left"]["contact_ranges"] == ((20, 36),)
     assert "REMOVE_BORDER" not in output.result.actions
     assert output.image.size == image.size
     assert any(finding.code == "BORDER.CONTACT_RISK" for finding in output.result.findings)
@@ -144,6 +148,8 @@ def test_inset_border_evidence_records_per_side_offset_and_thickness() -> None:
     assert isinstance(sides, dict)
     assert sides["left"]["offset"] == 6
     assert sides["left"]["thickness"] == 3
+    assert sides["left"]["contact_fraction"] == 0.0
+    assert sides["left"]["contact_ranges"] == ()
     assert sides["top"]["offset"] == 6
     assert output.result.evidence["border_contact_risk"] is False
     assert "REMOVE_BORDER" in output.result.actions

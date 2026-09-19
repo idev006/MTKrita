@@ -59,6 +59,8 @@ def _border_evidence(detection: BorderDetection) -> dict[str, object]:
             "color": side.color,
             "confidence": side.confidence,
             "contact_risk": side.contact_risk,
+            "contact_fraction": side.contact_fraction,
+            "contact_ranges": side.contact_ranges,
         }
     return {
         "border_detected": detection.detected,

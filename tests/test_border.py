@@ -90,6 +90,8 @@ def test_same_color_artwork_touching_inner_border_requires_review() -> None:
     detection = detect_border(image)
     assert detection.left is not None
     assert detection.left.contact_risk is True
+    assert detection.left.contact_fraction > 0
+    assert detection.left.contact_ranges == ((20, 36),)
     assert detection.contact_risk is True
 
     try:
@@ -111,6 +113,8 @@ def test_inset_border_after_transparent_padding_is_detected_and_removed() -> Non
         assert side is not None
         assert side.offset == 6
         assert side.thickness == 3
+        assert side.contact_fraction == 0.0
+        assert side.contact_ranges == ()
 
     result = remove_border(image, detection)
     assert result.size == (82, 62)
@@ -135,6 +139,8 @@ def test_inset_border_same_color_inner_contact_requires_review() -> None:
     assert detection.left is not None
     assert detection.left.offset == 6
     assert detection.left.contact_risk is True
+    assert detection.left.contact_fraction > 0
+    assert detection.left.contact_ranges == ((24, 56),)
     assert detection.contact_risk is True
 
     try:
@@ -143,3 +149,13 @@ def test_inset_border_same_color_inner_contact_requires_review() -> None:
         assert "contact risk" in str(exc)
     else:
         raise AssertionError("expected inset border contact-risk refusal")
+
+
+def test_inset_corner_geometry_is_not_reported_as_contact_range() -> None:
+    image = _inset_framed()
+    detection = detect_border(image)
+
+    assert detection.left is not None
+    assert detection.top is not None
+    assert detection.left.contact_ranges == ()
+    assert detection.top.contact_ranges == ()

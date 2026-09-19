@@ -14,6 +14,8 @@ class BorderSide:
     confidence: float
     contact_risk: bool = False
     offset: int = 0
+    contact_fraction: float = 0.0
+    contact_ranges: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -130,6 +132,54 @@ def _matching_fraction(
     return matches / len(samples)
 
 
+def _matching_ranges(
+    samples: list[tuple[int, int, int] | None],
+    color: tuple[int, int, int],
+    tolerance: int,
+    *,
+    origin: int = 0,
+) -> tuple[tuple[int, int], ...]:
+    indexes = [
+        origin + index
+        for index, sample in enumerate(samples)
+        if sample is not None and _distance(sample, color) <= tolerance
+    ]
+    if not indexes:
+        return ()
+
+    ranges: list[tuple[int, int]] = []
+    start = indexes[0]
+    previous = indexes[0]
+    for index in indexes[1:]:
+        if index == previous + 1:
+            previous = index
+            continue
+        ranges.append((start, previous + 1))
+        start = index
+        previous = index
+    ranges.append((start, previous + 1))
+    return tuple(ranges)
+
+
+def _contact_evidence(
+    samples: list[tuple[int, int, int] | None],
+    color: tuple[int, int, int],
+    tolerance: int,
+    *,
+    trim: int,
+) -> tuple[float, tuple[tuple[int, int], ...]]:
+    if trim and len(samples) > 2 * trim:
+        region = samples[trim:-trim]
+        origin = trim
+    else:
+        region = samples
+        origin = 0
+    return (
+        _matching_fraction(region, color, tolerance),
+        _matching_ranges(region, color, tolerance, origin=origin),
+    )
+
+
 def _detect_edge_side(
     image: Image.Image,
     side: str,
@@ -159,11 +209,13 @@ def _detect_edge_side(
 
     inner = _strip_samples(image, side, thickness)
     trim = min(thickness, max(0, len(inner) // 4))
-    if trim and len(inner) > 2 * trim:
-        inner = inner[trim:-trim]
-    contact_risk = (
-        _matching_fraction(inner, outer_color, color_tolerance) >= contact_fraction_threshold
+    contact_fraction, contact_ranges = _contact_evidence(
+        inner,
+        outer_color,
+        color_tolerance,
+        trim=trim,
     )
+    contact_risk = contact_fraction >= contact_fraction_threshold
 
     return BorderSide(
         side=side,
@@ -172,6 +224,8 @@ def _detect_edge_side(
         confidence=mean(coverages),
         contact_risk=contact_risk,
         offset=0,
+        contact_fraction=contact_fraction,
+        contact_ranges=contact_ranges,
     )
 
 
@@ -281,13 +335,14 @@ def _build_inset_side(
     )
     corner_trim = start + thickness
     trim = min(corner_trim, max(0, len(inner) // 4))
-    if trim and len(inner) > 2 * trim:
-        inner = inner[trim:-trim]
     contact_tolerance = max(32, search_tolerance)
-    contact_risk = (
-        _matching_fraction(inner, candidate.color, contact_tolerance)
-        >= contact_fraction_threshold
+    contact_fraction, contact_ranges = _contact_evidence(
+        inner,
+        candidate.color,
+        contact_tolerance,
+        trim=trim,
     )
+    contact_risk = contact_fraction >= contact_fraction_threshold
 
     consensus_bonus = 0.15 if consensus_side_count == 4 else 0.05
     confidence = min(1.0, candidate.coverage + consensus_bonus)
@@ -298,6 +353,8 @@ def _build_inset_side(
         confidence=confidence,
         contact_risk=contact_risk,
         offset=start,
+        contact_fraction=contact_fraction,
+        contact_ranges=contact_ranges,
     )
 
 
