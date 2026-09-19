@@ -279,7 +279,8 @@ def _build_inset_side(
         if inner_offset < _side_depth(image, candidate.side)
         else []
     )
-    trim = min(thickness, max(0, len(inner) // 4))
+    corner_trim = start + thickness
+    trim = min(corner_trim, max(0, len(inner) // 4))
     if trim and len(inner) > 2 * trim:
         inner = inner[trim:-trim]
     contact_tolerance = max(32, search_tolerance)
