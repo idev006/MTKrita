@@ -15,6 +15,7 @@ from .log_sink import JsonlLogSink
 from .path_manager import PathManager
 from .recovery import StartupReconciler, StartupRecoveryCoordinator
 from .resource_broker import ResourceBroker
+from .scheduler_recovery import SchedulerReconstructor
 from .task_leases import TaskLeaseRegistry
 from .worker_manager import WorkerManager
 
@@ -31,6 +32,7 @@ class MainBoard:
     diagnostics: DiagnosticBundleBuilder
     leases: TaskLeaseRegistry
     workers: WorkerManager
+    scheduler_recovery: SchedulerReconstructor
     lifecycle: JobLifecycleController
     recovery: StartupReconciler
     artifact_journal: ArtifactCommitJournal
@@ -66,6 +68,7 @@ class MainBoard:
             diagnostics=DiagnosticBundleBuilder(paths, jobs),
             leases=leases or TaskLeaseRegistry(),
             workers=workers or WorkerManager(),
+            scheduler_recovery=SchedulerReconstructor(jobs),
             lifecycle=JobLifecycleController(jobs),
             recovery=recovery,
             artifact_journal=artifact_journal,
