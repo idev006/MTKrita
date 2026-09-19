@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.1
+SSOT — Stage Contract Baseline v1.2
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -27,18 +27,6 @@ Every replaceable provider should expose:
 - structured result/output model
 - findings/measurements/confidence where applicable
 - recoverable vs non-recoverable failure indication
-
-Example conceptual protocol:
-
-```python
-class BackgroundRemovalProvider(Protocol):
-    provider_id: str
-
-    def remove(self, request: BackgroundRemovalRequest) -> BackgroundRemovalResult:
-        ...
-```
-
-The orchestrator owns policy such as whether confidence is high enough for AUTO_FIXED/REVIEW. Providers return evidence; they do not redefine project QA policy.
 
 ## Common Stage Result
 ทุก critical stage ควรรายงานอย่างน้อย:
@@ -81,63 +69,72 @@ The orchestrator owns policy such as whether confidence is high enough for AUTO_
 **Review:** border/artwork ambiguity  
 **Prohibited:** global color deletion
 
-## S-05 Frame Metadata Detection/Removal
+## S-05 Source Transparency Classification
+**Domain service:** MTKrita-owned routing/provenance service  
+**Input:** extracted/border-cleaned frame before any cleanup that can create alpha  
+**Output:** `SourceTransparencyDecision` = PRESERVE_ALPHA or REMOVE_BACKGROUND + alpha evidence  
+**Rule:** meaningful source transparency → preserve/skip segmentation  
+**Rule:** fully opaque RGBA is treated as opaque  
+**Invariant:** this decision is immutable provenance for the frame unless an explicit owner-approved override mode is used
+
+## S-06 Frame Metadata Detection / Cleanup Planning
 **Provider boundary:** `MetadataProcessingProvider`  
-**Input:** border-cleaned frame + metadata-zone config  
-**Output:** metadata detection + cleaned/unchanged frame  
+**Input:** frame + metadata-zone config  
+**Output:** metadata detection + cleanup mask/plan + confidence/evidence  
 **Review:** multiple or ambiguous candidates  
-**Prohibited:** deleting arbitrary text/numbers outside approved metadata evidence
+**Prohibited:** deleting arbitrary text/numbers outside approved metadata evidence  
+**Important:** metadata detection/removal must not redefine source transparency provenance
 
-## S-06 Transparency Routing
-**Domain service:** owned by MTKrita orchestrator/domain logic; not delegated blindly to a third-party provider  
-**Input:** metadata-cleaned frame  
-**Output:** route = PRESERVE_ALPHA or REMOVE_BACKGROUND + alpha evidence  
-**Rule:** meaningful transparency → preserve/skip segmentation  
-**Rule:** fully opaque RGBA is treated as opaque for routing
+## S-07 Transparent-Route Cleanup
+**Input:** source-transparent frame + approved metadata cleanup plan  
+**Output:** cleaned RGBA preserving source alpha semantics  
+**Rule:** no background segmentation by default
 
-## S-07 Background Classification
+## S-08 Background Classification
 **Provider boundary:** `BackgroundClassificationProvider`  
-**Input:** opaque frame  
+**Input:** source-opaque frame  
 **Output:** class = uniform / near-uniform / complex + evidence  
 **Purpose:** choose safest suitable provider
 
-## S-08 Background Removal
+## S-09 Background Removal
 **Provider boundary:** `BackgroundRemovalProvider`  
-**Input:** opaque frame + provider context  
+**Input:** source-opaque frame + provider context + optional approved metadata cleanup mask  
 **Output:** RGBA frame + mask + confidence/evidence  
 **Review:** insufficient foreground/background confidence  
-**Prohibited:** silent foreground deletion
+**Prohibited:** silent foreground deletion  
+**Rule:** alpha introduced by metadata cleanup must not cause this stage to be skipped
 
-## S-09 Content Analysis
+## S-10 Content Analysis
 **Provider boundary:** `ContentAnalysisProvider`  
 **Input:** RGBA working frame  
 **Output:** bbox, occupancy, edge contact, components/noise evidence  
 **Review:** suspicious clipping/edge collision
 
-## S-10 Smart Fit
+## S-11 Smart Fit
 **Provider boundary:** `ImageTransformProvider`  
 **Input:** RGBA frame + target profile  
 **Output:** fitted RGBA + scale/offset  
 **Rules:** preserve aspect ratio; no default upscale; minimize resampling  
 **Review:** significant requested upscale or unsafe fit
 
-## S-11 QA Validation
+## S-12 QA Validation
 **Domain service:** `QAEngine` owns project policy. Provider-specific measurements may be consumed, but PASS/REVIEW/FAIL policy remains MTKrita-owned.  
 **Input:** working/final candidate + processing evidence  
 **Output:** PASS / AUTO_FIXED / REVIEW / FAIL + findings  
 **Rule:** QA evaluates; it does not silently alter image content
 
-## S-12 Export
+## S-13 Export
 **Provider boundary:** `ExportProvider`  
 **Input:** QA-eligible frame + export profile  
 **Output:** PNG artifact + hash/metadata  
 **Rules:** deterministic naming; preserve alpha; validate profile; no unrelated overwrite
 
-## S-13 Manifest/Evidence
+## S-14 Manifest/Evidence
 **Domain service:** MTKrita-owned serializer/evidence model  
 **Input:** job/frame/stage outcomes  
 **Output:** machine-readable manifest + summary  
-**Invariant:** sufficient traceability to source/config/version
+**Invariant:** sufficient traceability to source/config/version  
+**Required provenance:** source transparency decision, metadata cleanup alpha contribution, background-removal alpha contribution, final alpha state
 
 ## Provider Registry / Factory
 Provider selection shall be resolved during job initialization from validated TOML configuration.
@@ -177,4 +174,4 @@ Breaking changes to stage/provider contracts require:
 - regression update
 - migration note where persisted manifests/artifacts are affected
 
-References: `29_UML_SYSTEM_MODEL.md`, `27_END_TO_END_WORKFLOW_SPEC.md`, `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`, `44_PROVIDER_INTERFACE_ARCHITECTURE.md`, ADR-015 and ADR-016.
+References: `29_UML_SYSTEM_MODEL.md`, `27_END_TO_END_WORKFLOW_SPEC.md`, `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`, `44_PROVIDER_INTERFACE_ARCHITECTURE.md`, ADR-015, ADR-016 and ADR-023.
