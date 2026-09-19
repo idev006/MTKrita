@@ -8,13 +8,33 @@ from typing import Any, Protocol
 from .job_store import JobStore
 from .messages import MessageEnvelope, MessageKind
 from .path_manager import PathManager
+from .resource_broker import ResourceBroker
 
-EXECUTE_TASK_PAYLOAD_VERSION = 1
+EXECUTE_TASK_PAYLOAD_VERSION = 2
 TASK_RESULT_PAYLOAD_VERSION = 1
 
 
 class WorkerTaskContractError(ValueError):
     """Raised when an ExecuteTask or candidate-result payload violates its contract."""
+
+
+@dataclass(frozen=True)
+class TaskInput:
+    name: str
+    path: str
+    sha256: str
+    byte_size: int
+
+    def __post_init__(self) -> None:
+        candidate = Path(self.name)
+        if not self.name or candidate.name != self.name or self.name in {".", ".."}:
+            raise WorkerTaskContractError("input name must be one safe path component")
+        if not self.path:
+            raise WorkerTaskContractError("input path must be non-empty")
+        if len(self.sha256) != 64 or any(ch not in "0123456789abcdef" for ch in self.sha256):
+            raise WorkerTaskContractError("input sha256 must be lowercase hexadecimal")
+        if self.byte_size < 0:
+            raise WorkerTaskContractError("input byte_size must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -25,6 +45,7 @@ class ExecuteTaskRequest:
     attempt: int
     descriptor_version: int
     descriptor: dict[str, Any]
+    inputs: tuple[TaskInput, ...]
     scratch_path: str
 
 
@@ -73,9 +94,16 @@ class TaskExecutor(Protocol):
 class ExecuteTaskCommandBuilder:
     """Build worker commands only from current durable authority and PathManager refs."""
 
-    def __init__(self, *, jobs: JobStore, paths: PathManager) -> None:
+    def __init__(
+        self,
+        *,
+        jobs: JobStore,
+        paths: PathManager,
+        resources: ResourceBroker | None = None,
+    ) -> None:
         self._jobs = jobs
         self._paths = paths
+        self._resources = resources or ResourceBroker(paths)
 
     def build(self, task_id: str) -> MessageEnvelope:
         task = self._jobs.get_task(task_id)
@@ -89,6 +117,7 @@ class ExecuteTaskCommandBuilder:
 
         scratch = self._paths.prepare_worker_scratch(task.job_id, task.worker_id)
         self._paths.assert_owned(scratch.path)
+        inputs = self._resolve_inputs(task.job_id, descriptor.descriptor)
         return MessageEnvelope.create(
             kind=MessageKind.COMMAND,
             message_type="ExecuteTask",
@@ -100,8 +129,35 @@ class ExecuteTaskCommandBuilder:
                 "execute_schema_version": EXECUTE_TASK_PAYLOAD_VERSION,
                 "descriptor_version": descriptor.descriptor_version,
                 "descriptor": descriptor.descriptor,
+                "inputs": [asdict(item) for item in inputs],
                 "scratch_path": str(scratch.path),
             },
+        )
+
+    def _resolve_inputs(self, job_id: str, descriptor: dict[str, Any]) -> tuple[TaskInput, ...]:
+        input_name = descriptor.get("input_name")
+        input_sha256 = descriptor.get("input_sha256")
+        if input_name is None and input_sha256 is None:
+            return ()
+        if not isinstance(input_name, str) or not input_name:
+            raise RuntimeError("task descriptor input_name must be a non-empty string")
+        if not isinstance(input_sha256, str):
+            raise RuntimeError("task descriptor input_sha256 must be a string")
+        source = self._paths.input(job_id, input_name)
+        try:
+            verified = self._resources.verify_input_file(
+                source,
+                expected_sha256=input_sha256,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            raise RuntimeError(f"task input verification failed: {exc}") from exc
+        return (
+            TaskInput(
+                name=input_name,
+                path=str(verified.target.path),
+                sha256=verified.sha256,
+                byte_size=verified.byte_size,
+            ),
         )
 
 
@@ -118,6 +174,7 @@ def parse_execute_task(message: MessageEnvelope) -> ExecuteTaskRequest:
         "execute_schema_version",
         "descriptor_version",
         "descriptor",
+        "inputs",
         "scratch_path",
     }
     if set(payload) != required:
@@ -131,6 +188,26 @@ def parse_execute_task(message: MessageEnvelope) -> ExecuteTaskRequest:
     descriptor = payload["descriptor"]
     if not isinstance(descriptor, dict):
         raise WorkerTaskContractError("descriptor must be a JSON object")
+    raw_inputs = payload["inputs"]
+    if not isinstance(raw_inputs, list):
+        raise WorkerTaskContractError("inputs must be a list")
+    inputs: list[TaskInput] = []
+    for item in raw_inputs:
+        if not isinstance(item, dict) or set(item) != {"name", "path", "sha256", "byte_size"}:
+            raise WorkerTaskContractError("invalid task input payload")
+        name = item["name"]
+        path = item["path"]
+        sha256 = item["sha256"]
+        if not isinstance(name, str) or not isinstance(path, str) or not isinstance(sha256, str):
+            raise WorkerTaskContractError("task input name/path/hash must be strings")
+        inputs.append(
+            TaskInput(
+                name=name,
+                path=path,
+                sha256=sha256,
+                byte_size=_exact_int(item["byte_size"], "input byte_size"),
+            )
+        )
     scratch_path = payload["scratch_path"]
     if not isinstance(scratch_path, str) or not scratch_path:
         raise WorkerTaskContractError("scratch_path must be a non-empty string")
@@ -142,6 +219,7 @@ def parse_execute_task(message: MessageEnvelope) -> ExecuteTaskRequest:
         attempt=message.attempt,
         descriptor_version=descriptor_version,
         descriptor=dict(descriptor),
+        inputs=tuple(inputs),
         scratch_path=scratch_path,
     )
 
