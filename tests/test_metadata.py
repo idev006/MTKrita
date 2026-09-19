@@ -110,31 +110,50 @@ def test_analysis_exclusion_outside_candidate_does_not_change_badge_selection() 
     assert detection.analysis_exclusion_applied is True
     assert detection.analysis_excluded_pixel_count > 0
     assert detection.analysis_excluded_candidate_pixel_count == 0
-    assert detection.fragmented_by_exclusion is False
+    assert detection.requires_joint_cleanup is False
 
 
-def test_analysis_exclusion_intersecting_candidate_marks_completeness_unresolved() -> None:
+def test_split_badge_fragments_are_associated_only_for_joint_cleanup() -> None:
     image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
-    draw = ImageDraw.Draw(image)
-    draw.ellipse((8, 8, 34, 34), fill=(180, 220, 120, 255))
+    ImageDraw.Draw(image).ellipse((8, 8, 34, 34), fill=(180, 220, 120, 255))
     exclusion = Image.new("L", image.size, 0)
-    ImageDraw.Draw(exclusion).line((8, 12, 8, 30), fill=255, width=1)
+    ImageDraw.Draw(exclusion).rectangle((20, 0, 21, 39), fill=255)
 
     detection = detect_corner_metadata(image, analysis_exclusion_mask=exclusion)
 
-    assert detection.analysis_exclusion_applied is True
+    assert detection.mask is not None
     assert detection.analysis_excluded_candidate_pixel_count > 0
     assert detection.fragmented_by_exclusion is True
-    assert detection.fragment_association_resolved is False
-    assert "analysis exclusion" in detection.reason
-    assert detection.mask is not None
+    assert detection.fragment_association_applied is True
+    assert detection.fragment_association_resolved is True
+    assert detection.associated_fragment_count == 2
+    assert detection.requires_joint_cleanup is True
+    assert detection.analysis_exclusion_sha256 is not None
 
     try:
         remove_detected_metadata(image, detection)
     except ValueError as exc:
-        assert "completeness unresolved" in str(exc)
+        assert "requires joint cleanup" in str(exc)
     else:
-        raise AssertionError("expected exclusion-fragmented metadata removal refusal")
+        raise AssertionError("expected joint-only metadata removal refusal")
+
+
+def test_raw_topology_group_extending_beyond_anchor_routes_review() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(image)
+    color = (180, 220, 120, 255)
+    draw.ellipse((8, 8, 34, 34), fill=color)
+    draw.line((34, 20, 46, 20), fill=color, width=3)
+    draw.rectangle((44, 14, 49, 26), fill=color)
+    exclusion = Image.new("L", image.size, 0)
+    ImageDraw.Draw(exclusion).rectangle((20, 0, 21, 39), fill=255)
+
+    detection = detect_corner_metadata(image, analysis_exclusion_mask=exclusion)
+
+    assert detection.mask is None
+    assert detection.fragment_association_applied is True
+    assert detection.fragment_association_resolved is False
+    assert "unresolved" in detection.reason
 
 
 def test_analysis_exclusion_size_mismatch_is_rejected() -> None:

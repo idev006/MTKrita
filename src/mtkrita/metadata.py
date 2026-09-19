@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from math import hypot, sqrt
 
 import cv2
@@ -32,6 +33,7 @@ class MetadataDetection:
     analysis_exclusion_applied: bool = False
     analysis_excluded_pixel_count: int = 0
     analysis_excluded_candidate_pixel_count: int = 0
+    analysis_exclusion_sha256: str | None = None
     fragmented_by_exclusion: bool = False
     fragment_association_applied: bool = False
     fragment_association_resolved: bool = False
@@ -44,13 +46,16 @@ class MetadataDetection:
 @dataclass(frozen=True)
 class _MetadataCandidate:
     confidence: float
-    label: int
+    mask: np.ndarray
     bbox: tuple[int, int, int, int]
     area_ratio: float
     fill_ratio: float
     compactness: float
     anchor_distance: float
     anchored: bool
+    fragment_count: int = 1
+    requires_joint_cleanup: bool = False
+    association_resolved: bool = False
 
 
 def _validate_zone(zone: MetadataZone) -> None:
@@ -77,29 +82,156 @@ def _analysis_exclusion(
     raw_candidate: np.ndarray,
     zone_width: int,
     zone_height: int,
-) -> tuple[np.ndarray, dict[str, object]]:
+) -> tuple[np.ndarray, np.ndarray, dict[str, object]]:
     candidate_mask = raw_candidate.copy()
+    empty_exclusion = np.zeros((zone_height, zone_width), dtype=bool)
     if analysis_exclusion_mask is None:
-        return candidate_mask, {
+        return candidate_mask, empty_exclusion, {
             "analysis_exclusion_applied": False,
             "analysis_excluded_pixel_count": 0,
             "analysis_excluded_candidate_pixel_count": 0,
-            "fragmented_by_exclusion": False,
+            "analysis_exclusion_sha256": None,
         }
     if analysis_exclusion_mask.size != image.size:
         raise ValueError("analysis exclusion mask size does not match frame")
 
-    exclusion = np.asarray(analysis_exclusion_mask.convert("L"), dtype=np.uint8) > 0
+    exclusion_image = analysis_exclusion_mask.convert("L")
+    exclusion_array = np.asarray(exclusion_image, dtype=np.uint8)
+    exclusion = exclusion_array > 0
     zone_exclusion = exclusion[:zone_height, :zone_width]
     raw_visible = raw_candidate > 0
     excluded_candidate = int(np.count_nonzero(raw_visible & zone_exclusion))
     candidate_mask[zone_exclusion] = 0
-    return candidate_mask, {
+    return candidate_mask, zone_exclusion, {
         "analysis_exclusion_applied": True,
         "analysis_excluded_pixel_count": int(np.count_nonzero(exclusion)),
         "analysis_excluded_candidate_pixel_count": excluded_candidate,
-        "fragmented_by_exclusion": excluded_candidate > 0,
+        "analysis_exclusion_sha256": sha256(exclusion_array.tobytes()).hexdigest(),
     }
+
+
+def _candidate_from_mask(
+    mask: np.ndarray,
+    *,
+    zone_width: int,
+    zone_height: int,
+    anchor_width: float,
+    anchor_height: float,
+    fragment_count: int = 1,
+    requires_joint_cleanup: bool = False,
+    association_resolved: bool = False,
+) -> _MetadataCandidate | None:
+    ys, xs = np.nonzero(mask)
+    if xs.size == 0:
+        return None
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    width = x1 - x0
+    height = y1 - y0
+    if width <= 1 or height <= 1:
+        return None
+
+    area = int(xs.size)
+    area_ratio = area / max(1, zone_width * zone_height)
+    fill_ratio = area / (width * height)
+    compactness = min(width, height) / max(width, height)
+    center_x = x0 + (width / 2)
+    center_y = y0 + (height / 2)
+    anchored = center_x <= anchor_width and center_y <= anchor_height
+    anchor_distance = hypot(center_x / zone_width, center_y / zone_height) / sqrt(2)
+    proximity = 1.0 - min(1.0, anchor_distance)
+    confidence = (0.30 * fill_ratio) + (0.30 * proximity) + (0.20 * compactness) + 0.20
+    return _MetadataCandidate(
+        confidence=float(confidence),
+        mask=mask.astype(bool, copy=True),
+        bbox=(x0, y0, x1, y1),
+        area_ratio=float(area_ratio),
+        fill_ratio=float(fill_ratio),
+        compactness=float(compactness),
+        anchor_distance=float(anchor_distance),
+        anchored=anchored,
+        fragment_count=fragment_count,
+        requires_joint_cleanup=requires_joint_cleanup,
+        association_resolved=association_resolved,
+    )
+
+
+def _group_candidates_by_raw_topology(
+    raw_candidate: np.ndarray,
+    candidate_mask: np.ndarray,
+    zone_exclusion: np.ndarray,
+    *,
+    zone_width: int,
+    zone_height: int,
+    anchor_width: float,
+    anchor_height: float,
+) -> tuple[list[_MetadataCandidate], bool]:
+    raw_count, raw_labels = cv2.connectedComponents(raw_candidate, connectivity=8)
+    exclusion_boundary = cv2.dilate(
+        zone_exclusion.astype(np.uint8),
+        np.ones((3, 3), dtype=np.uint8),
+        iterations=1,
+    ).astype(bool)
+    candidates: list[_MetadataCandidate] = []
+    unresolved_association = False
+
+    for raw_label in range(1, raw_count):
+        raw_group = raw_labels == raw_label
+        group_mask = raw_group & (candidate_mask > 0)
+        if not np.any(group_mask):
+            continue
+
+        excluded_from_group = bool(np.any(raw_group & zone_exclusion))
+        fragment_count, fragment_labels = cv2.connectedComponents(
+            group_mask.astype(np.uint8), connectivity=8
+        )
+        fragment_total = fragment_count - 1
+
+        if excluded_from_group:
+            fragment_checks: list[bool] = []
+            for fragment_label in range(1, fragment_count):
+                fragment = fragment_labels == fragment_label
+                fragment_candidate = _candidate_from_mask(
+                    fragment,
+                    zone_width=zone_width,
+                    zone_height=zone_height,
+                    anchor_width=anchor_width,
+                    anchor_height=anchor_height,
+                )
+                fragment_checks.append(
+                    fragment_candidate is not None
+                    and fragment_candidate.anchored
+                    and bool(np.any(fragment & exclusion_boundary))
+                )
+            if not fragment_checks or not all(fragment_checks):
+                if any(
+                    _candidate_from_mask(
+                        fragment_labels == fragment_label,
+                        zone_width=zone_width,
+                        zone_height=zone_height,
+                        anchor_width=anchor_width,
+                        anchor_height=anchor_height,
+                    )
+                    is not None
+                    for fragment_label in range(1, fragment_count)
+                ):
+                    unresolved_association = True
+                continue
+
+        candidate = _candidate_from_mask(
+            group_mask,
+            zone_width=zone_width,
+            zone_height=zone_height,
+            anchor_width=anchor_width,
+            anchor_height=anchor_height,
+            fragment_count=max(1, fragment_total),
+            requires_joint_cleanup=excluded_from_group,
+            association_resolved=excluded_from_group,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+
+    return candidates, unresolved_association
 
 
 def _complete_enclosed_visible_holes(
@@ -133,9 +265,9 @@ def _complete_enclosed_visible_holes(
     holes &= alpha[y0:y1, x0:x1] > 8
     hole_count = int(np.count_nonzero(holes))
     if hole_count:
-        local_completed = mask[y0:y1, x0:x1].copy()
-        local_completed |= holes
-        mask[y0:y1, x0:x1] = local_completed
+        completed = mask[y0:y1, x0:x1].copy()
+        completed |= holes
+        mask[y0:y1, x0:x1] = completed
     return mask, hole_count
 
 
@@ -151,7 +283,7 @@ def detect_corner_metadata(
     min_compactness: float = 0.35,
     dominance_margin: float = 0.12,
 ) -> MetadataDetection:
-    """Detect a compact, corner-anchored metadata component conservatively."""
+    """Detect compact corner metadata with conservative topology evidence."""
     resolved_zone = zone or MetadataZone()
     _validate_zone(resolved_zone)
     if not 0 <= color_tolerance <= 255:
@@ -173,12 +305,11 @@ def detect_corner_metadata(
     rgb = rgba[:, :, :3].astype(np.int16)
     alpha = rgba[:, :, 3]
     background = _background_rgb(rgba)
-
     zone_rgb = rgb[:zone_height, :zone_width, :]
     zone_alpha = alpha[:zone_height, :zone_width]
     distance = np.max(np.abs(zone_rgb - background), axis=2)
     raw_candidate = ((distance > color_tolerance) & (zone_alpha > 8)).astype(np.uint8) * 255
-    candidate_mask, exclusion_evidence = _analysis_exclusion(
+    candidate_mask, zone_exclusion, exclusion_evidence = _analysis_exclusion(
         image,
         analysis_exclusion_mask,
         raw_candidate,
@@ -186,8 +317,27 @@ def detect_corner_metadata(
         zone_height,
     )
 
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(candidate_mask, connectivity=8)
-    if count <= 1:
+    candidates, unresolved_association = _group_candidates_by_raw_topology(
+        raw_candidate,
+        candidate_mask,
+        zone_exclusion,
+        zone_width=zone_width,
+        zone_height=zone_height,
+        anchor_width=anchor_width,
+        anchor_height=anchor_height,
+    )
+    if unresolved_association:
+        return MetadataDetection(
+            None,
+            0.0,
+            None,
+            "analysis exclusion produced an unresolved raw-topology association",
+            candidate_count=len(candidates),
+            fragment_association_applied=True,
+            fragment_association_resolved=False,
+            **exclusion_evidence,
+        )
+    if not candidates:
         return MetadataDetection(
             None,
             0.0,
@@ -196,56 +346,11 @@ def detect_corner_metadata(
             **exclusion_evidence,
         )
 
-    zone_area = zone_width * zone_height
-    candidates: list[_MetadataCandidate] = []
-    for label in range(1, count):
-        x, y, w, h, area = (int(v) for v in stats[label])
-        area_ratio = area / zone_area
-        if not min_area_ratio <= area_ratio <= max_area_ratio:
-            continue
-        if w <= 1 or h <= 1:
-            continue
-
-        fill_ratio = area / (w * h)
-        compactness = min(w, h) / max(w, h)
-        center_x = x + (w / 2)
-        center_y = y + (h / 2)
-        anchored = center_x <= anchor_width and center_y <= anchor_height
-        anchor_distance = hypot(center_x / zone_width, center_y / zone_height) / sqrt(2)
-        proximity = 1.0 - min(1.0, anchor_distance)
-        containment = 1.0 if (x + w <= zone_width and y + h <= zone_height) else 0.65
-        confidence = (
-            (0.30 * fill_ratio)
-            + (0.30 * proximity)
-            + (0.20 * compactness)
-            + (0.20 * containment)
-        )
-        candidates.append(
-            _MetadataCandidate(
-                confidence=float(confidence),
-                label=label,
-                bbox=(x, y, x + w, y + h),
-                area_ratio=float(area_ratio),
-                fill_ratio=float(fill_ratio),
-                compactness=float(compactness),
-                anchor_distance=float(anchor_distance),
-                anchored=anchored,
-            )
-        )
-
-    if not candidates:
-        return MetadataDetection(
-            None,
-            0.0,
-            None,
-            "no candidate passed metadata constraints",
-            **exclusion_evidence,
-        )
-
     plausible = [
         candidate
         for candidate in candidates
         if candidate.anchored
+        and min_area_ratio <= candidate.area_ratio <= max_area_ratio
         and candidate.fill_ratio >= min_fill_ratio
         and candidate.compactness >= min_compactness
     ]
@@ -279,18 +384,16 @@ def detect_corner_metadata(
             **exclusion_evidence,
         )
 
-    local = labels == best.label
-    enclosed_count = 0
-    if not bool(exclusion_evidence["fragmented_by_exclusion"]):
-        local, enclosed_count = _complete_enclosed_visible_holes(local, zone_alpha)
-
+    completed_mask, enclosed_count = _complete_enclosed_visible_holes(best.mask, zone_alpha)
     full_mask = np.zeros((height, width), dtype=np.uint8)
-    full_mask[:zone_height, :zone_width] = local.astype(np.uint8) * 255
+    full_mask[:zone_height, :zone_width] = completed_mask.astype(np.uint8) * 255
+
     reason = "single dominant anchored top-left metadata candidate"
+    if best.requires_joint_cleanup:
+        reason += "; exclusion-fragment association resolved for joint cleanup"
     if enclosed_count:
         reason += "; enclosed visible interior detail included"
-    if bool(exclusion_evidence["fragmented_by_exclusion"]):
-        reason += "; analysis exclusion intersects candidate pixels"
+
     return MetadataDetection(
         bbox=best.bbox,
         confidence=best.confidence,
@@ -303,6 +406,11 @@ def detect_corner_metadata(
         compactness=best.compactness,
         anchor_distance=best.anchor_distance,
         dominance_margin=float(margin),
+        fragmented_by_exclusion=best.requires_joint_cleanup and best.fragment_count > 1,
+        fragment_association_applied=best.requires_joint_cleanup,
+        fragment_association_resolved=best.association_resolved,
+        associated_fragment_count=best.fragment_count,
+        requires_joint_cleanup=best.requires_joint_cleanup,
         enclosed_visible_hole_pixel_count=enclosed_count,
         **exclusion_evidence,
     )

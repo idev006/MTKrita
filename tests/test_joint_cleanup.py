@@ -1,3 +1,5 @@
+from hashlib import sha256
+
 from PIL import Image, ImageDraw
 
 from mtkrita.border import BorderDetection, BorderSide
@@ -129,32 +131,6 @@ def test_ambiguous_metadata_cannot_authorize_joint_cleanup() -> None:
     assert "metadata cleanup mask is absent" in plan.reasons[0]
 
 
-def test_exclusion_fragmented_metadata_cannot_authorize_joint_cleanup() -> None:
-    image, border, metadata = _case()
-    fragmented = MetadataDetection(
-        bbox=metadata.bbox,
-        confidence=metadata.confidence,
-        mask=metadata.mask,
-        reason="single dominant anchored candidate; exclusion intersects pixels",
-        candidate_count=1,
-        anchored_candidate_count=1,
-        area_ratio=metadata.area_ratio,
-        fill_ratio=metadata.fill_ratio,
-        compactness=metadata.compactness,
-        anchor_distance=metadata.anchor_distance,
-        dominance_margin=metadata.dominance_margin,
-        analysis_exclusion_applied=True,
-        analysis_excluded_pixel_count=40,
-        analysis_excluded_candidate_pixel_count=12,
-        fragmented_by_exclusion=True,
-    )
-
-    plan = plan_joint_cleanup(image, border, fragmented)
-
-    assert plan.status == JointCleanupStatus.REVIEW
-    assert "completeness unresolved" in plan.reasons[0]
-
-
 def test_spatial_border_mask_preserves_different_color_artwork_crossing_band() -> None:
     image, border, _ = _case()
     draw = ImageDraw.Draw(image)
@@ -192,3 +168,53 @@ def test_review_plan_cannot_be_applied() -> None:
         assert "SAFE_PLAN" in str(exc)
     else:
         raise AssertionError("expected REVIEW plan application refusal")
+
+
+def test_resolved_fragment_association_requires_exact_border_mask_identity() -> None:
+    image, border, metadata = _case()
+    border_mask = build_border_cleanup_mask(image, border)
+    resolved = MetadataDetection(
+        bbox=metadata.bbox,
+        confidence=metadata.confidence,
+        mask=metadata.mask,
+        reason="resolved exclusion-fragment association",
+        candidate_count=1,
+        anchored_candidate_count=1,
+        dominance_margin=1.0,
+        analysis_exclusion_applied=True,
+        analysis_exclusion_sha256=sha256(border_mask.tobytes()).hexdigest(),
+        fragmented_by_exclusion=True,
+        fragment_association_applied=True,
+        fragment_association_resolved=True,
+        associated_fragment_count=2,
+        requires_joint_cleanup=True,
+    )
+
+    plan = plan_joint_cleanup(image, border, resolved)
+
+    assert plan.status == JointCleanupStatus.SAFE_PLAN
+
+
+def test_joint_cleanup_rejects_mismatched_exclusion_mask_identity() -> None:
+    image, border, metadata = _case()
+    mismatched = MetadataDetection(
+        bbox=metadata.bbox,
+        confidence=metadata.confidence,
+        mask=metadata.mask,
+        reason="resolved exclusion-fragment association",
+        candidate_count=1,
+        anchored_candidate_count=1,
+        dominance_margin=1.0,
+        analysis_exclusion_applied=True,
+        analysis_exclusion_sha256="0" * 64,
+        fragmented_by_exclusion=True,
+        fragment_association_applied=True,
+        fragment_association_resolved=True,
+        associated_fragment_count=2,
+        requires_joint_cleanup=True,
+    )
+
+    plan = plan_joint_cleanup(image, border, mismatched)
+
+    assert plan.status == JointCleanupStatus.REVIEW
+    assert "does not match current border evidence" in plan.reasons[0]

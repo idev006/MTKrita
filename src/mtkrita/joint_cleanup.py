@@ -80,6 +80,10 @@ def build_border_cleanup_mask(
     return Image.fromarray(mask, mode="L")
 
 
+def _mask_sha256(mask: Image.Image) -> str:
+    return sha256(np.asarray(mask.convert("L"), dtype=np.uint8).tobytes()).hexdigest()
+
+
 def _range_length(value: tuple[int, int]) -> int:
     return max(0, value[1] - value[0])
 
@@ -194,11 +198,13 @@ def plan_joint_cleanup(
         return _review_plan("metadata confidence below automatic threshold", confidence=confidence)
     if metadata.anchored_candidate_count != 1:
         return _review_plan("metadata candidate is not uniquely anchored", confidence=confidence)
-    if metadata.fragmented_by_exclusion:
+    if metadata.fragmented_by_exclusion and not metadata.fragment_association_resolved:
         return _review_plan(
             "metadata mask completeness unresolved after analysis exclusion",
             confidence=confidence,
         )
+    if metadata.requires_joint_cleanup and not metadata.fragment_association_resolved:
+        return _review_plan("joint-only metadata association is unresolved", confidence=confidence)
 
     explained, unexplained, localization_reasons = _contact_accounting(
         border,
@@ -234,6 +240,15 @@ def plan_joint_cleanup(
         border,
         color_tolerance=border_color_tolerance,
     )
+    if metadata.requires_joint_cleanup:
+        if metadata.analysis_exclusion_sha256 is None:
+            return _review_plan("joint metadata lacks exclusion-mask identity", confidence=confidence)
+        if _mask_sha256(border_mask) != metadata.analysis_exclusion_sha256:
+            return _review_plan(
+                "joint metadata exclusion mask does not match current border evidence",
+                confidence=confidence,
+            )
+
     metadata_mask = metadata.mask.convert("L")
     if metadata_mask.size != image.size:
         return _review_plan("metadata mask size does not match frame", confidence=confidence)
