@@ -5,7 +5,6 @@ from collections.abc import Callable
 
 from .messages import MessageEnvelope
 
-
 MessageHandler = Callable[[MessageEnvelope], None]
 
 
