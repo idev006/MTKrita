@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from statistics import mean
+
+from PIL import Image
+
+
+@dataclass(frozen=True)
+class BorderSide:
+    side: str
+    thickness: int
+    color: tuple[int, int, int]
+    confidence: float
+
+
+@dataclass(frozen=True)
+class BorderDetection:
+    left: BorderSide | None
+    top: BorderSide | None
+    right: BorderSide | None
+    bottom: BorderSide | None
+
+    @property
+    def detected(self) -> bool:
+        return any((self.left, self.top, self.right, self.bottom))
+
+    @property
+    def confidence(self) -> float:
+        values = [
+            side.confidence
+            for side in (self.left, self.top, self.right, self.bottom)
+            if side is not None
+        ]
+        return mean(values) if values else 0.0
+
+
+def _distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
+    return max(abs(a[i] - b[i]) for i in range(3))
+
+
+def _dominant_color(
+    pixels: list[tuple[int, int, int]], tolerance: int
+) -> tuple[tuple[int, int, int], float]:
+    if not pixels:
+        return (0, 0, 0), 0.0
+    buckets: dict[tuple[int, int, int], int] = {}
+    quant = max(1, tolerance + 1)
+    for pixel in pixels:
+        key = tuple((channel // quant) * quant for channel in pixel)
+        buckets[key] = buckets.get(key, 0) + 1
+    seed = max(buckets, key=buckets.get)
+    matching = [pixel for pixel in pixels if _distance(seed, pixel) <= tolerance]
+    if not matching:
+        return seed, 0.0
+    color = tuple(round(sum(pixel[i] for pixel in matching) / len(matching)) for i in range(3))
+    return color, len(matching) / len(pixels)
+
+
+def _strip_pixels(image: Image.Image, side: str, offset: int) -> list[tuple[int, int, int]]:
+    rgba = image.convert("RGBA")
+    px = rgba.load()
+    coords: list[tuple[int, int]]
+    if side == "top":
+        coords = [(x, offset) for x in range(rgba.width)]
+    elif side == "bottom":
+        y = rgba.height - 1 - offset
+        coords = [(x, y) for x in range(rgba.width)]
+    elif side == "left":
+        coords = [(offset, y) for y in range(rgba.height)]
+    else:
+        x = rgba.width - 1 - offset
+        coords = [(x, y) for y in range(rgba.height)]
+    return [(px[x, y][0], px[x, y][1], px[x, y][2]) for x, y in coords if px[x, y][3] > 8]
+
+
+def _detect_side(
+    image: Image.Image,
+    side: str,
+    *,
+    max_thickness: int,
+    color_tolerance: int,
+    min_coverage: float,
+) -> BorderSide | None:
+    outer = _strip_pixels(image, side, 0)
+    if not outer:
+        return None
+    outer_color, outer_coverage = _dominant_color(outer, color_tolerance)
+    if outer_coverage < min_coverage:
+        return None
+
+    coverages: list[float] = []
+    thickness = 0
+    for offset in range(max_thickness):
+        strip = _strip_pixels(image, side, offset)
+        if not strip:
+            break
+        color, coverage = _dominant_color(strip, color_tolerance)
+        if coverage < min_coverage or _distance(color, outer_color) > color_tolerance:
+            break
+        thickness += 1
+        coverages.append(coverage)
+
+    if thickness == 0:
+        return None
+    return BorderSide(side=side, thickness=thickness, color=outer_color, confidence=mean(coverages))
+
+
+def detect_border(
+    image: Image.Image,
+    *,
+    max_fraction: float = 0.12,
+    color_tolerance: int = 8,
+    min_coverage: float = 0.985,
+) -> BorderDetection:
+    if not 0 < max_fraction <= 0.5:
+        raise ValueError("max_fraction must be in (0, 0.5]")
+    if not 0 <= color_tolerance <= 255:
+        raise ValueError("color_tolerance must be between 0 and 255")
+    if not 0 < min_coverage <= 1:
+        raise ValueError("min_coverage must be in (0, 1]")
+
+    rgba = image.convert("RGBA")
+    max_thickness = max(1, int(min(rgba.size) * max_fraction))
+    shared = {
+        "max_thickness": max_thickness,
+        "color_tolerance": color_tolerance,
+        "min_coverage": min_coverage,
+    }
+    return BorderDetection(
+        left=_detect_side(rgba, "left", **shared),
+        top=_detect_side(rgba, "top", **shared),
+        right=_detect_side(rgba, "right", **shared),
+        bottom=_detect_side(rgba, "bottom", **shared),
+    )
+
+
+def remove_border(
+    image: Image.Image,
+    detection: BorderDetection,
+    *,
+    auto_threshold: float = 0.995,
+) -> Image.Image:
+    if detection.detected and detection.confidence < auto_threshold:
+        raise ValueError("border confidence below automatic removal threshold")
+
+    left = detection.left.thickness if detection.left else 0
+    top = detection.top.thickness if detection.top else 0
+    right = detection.right.thickness if detection.right else 0
+    bottom = detection.bottom.thickness if detection.bottom else 0
+    if left + right >= image.width or top + bottom >= image.height:
+        raise ValueError("detected border consumes frame")
+    return image.crop((left, top, image.width - right, image.height - bottom))
