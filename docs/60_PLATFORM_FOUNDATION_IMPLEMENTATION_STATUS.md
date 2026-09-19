@@ -1,7 +1,7 @@
 # MTKrita Platform Foundation Implementation Status
 
 ## Status
-SSOT — Platform Foundation Implementation Track v2.2
+SSOT — Platform Foundation Implementation Track v2.3
 
 ## Purpose
 Track implementation of the approved PathManager/MainBoard/ResourceBroker/multi-worker control-plane architecture separately from M2 image-processing work.
@@ -25,20 +25,23 @@ PR #10 / branch `feat/platform-control-foundation`
 - final artifact re-verification support for crash reconciliation
 
 #### Durable JobStore foundation
-- SQLite schema version 2 with explicit v1→v2 migration
-- durable job/task state independent of worker memory
-- task generation, attempt, worker ownership and lease expiry
+- SQLite schema version 3
+- explicit migration chain v1→v2→v3
+- v2 introduced durable task state, generation, attempt, worker ownership and lease expiry
+- v3 introduces durable task descriptors for scheduler reconstruction
+- new reconstructable task descriptor records persist priority, descriptor schema version and JSON payload in the same task-creation transaction
+- migrated legacy v2 tasks are explicitly marked `reconstructable=false` with descriptor version 0 rather than silently inventing execution meaning
 - CAS job/task transitions and stale-attempt rejection
 - append-oriented event journal
 - WAL + foreign-key validation
-- migration/reopen/stale-write regression tests
+- migration/reopen/stale-write/descriptor persistence regression tests
 
 #### MainBoard communication foundation
 - versioned `MessageEnvelope`
 - command/event distinction with correlation/causation identity
 - in-process EventBus behind replaceable transport contract
 - MainBoard composition root; no sticker/image business algorithms
-- composed PathManager, ResourceBroker, JobStore, EventBus, TaskLeaseRegistry, WorkerManager, lifecycle/recovery, artifact-commit, LogSink and diagnostic services
+- composed PathManager, ResourceBroker, JobStore, EventBus, TaskLeaseRegistry, WorkerManager, scheduler reconstruction, lifecycle/recovery, artifact-commit, LogSink and diagnostic services
 
 #### Task lease / stale-result guard
 - authoritative attempt per task
@@ -66,14 +69,10 @@ PR #10 / branch `feat/platform-control-foundation`
 - ADR-024 accepted: filesystem rename + SQLite state cannot be one native ACID transaction, so MTKrita uses durable commit intent
 - `ArtifactCommitJournal` persists commit identity in the same JobStore SQLite database under MainBoard single-writer policy
 - intent records job/task/worker/attempt/task generation/source/target/hash/size/state
-- `ArtifactCommitCoordinator` performs: validate candidate → persist intent → atomic promote → mark promoted → finalize artifact + task success
-- task success and commit record finalization occur in the same SQLite transaction
+- `ArtifactCommitCoordinator` performs validate → intent → atomic promote → verify → durable finalize
+- task success and commit-record finalization occur in the same SQLite transaction
 - `ArtifactCommitReconciler` handles crash states idempotently
-- intent without final file stays incomplete and never implies success
-- matching promoted final file can be finalized after restart
-- mismatching final hash becomes `FAILED_INTEGRITY`
-- superseded/stale task attempts become `SUPERSEDED` and cannot claim success
-- final file existence alone never implies task/job completion
+- missing final artifact never implies success; matching promoted artifact can finalize; hash mismatch becomes integrity failure; stale attempt becomes superseded
 
 #### Ordered startup recovery
 - `StartupRecoveryCoordinator` enforces artifact-commit reconciliation before orphan-task interruption
@@ -85,90 +84,97 @@ PR #10 / branch `feat/platform-control-foundation`
 - MainBoard-owned `JsonlLogSink` subscribes centrally to EventBus
 - workers/UI do not append shared log files directly
 - per-job UTF-8 JSONL logs are resolved through PathManager
-- log records preserve severity/component/code/job/correlation/frame/stage/task/worker/attempt/provider context
+- records preserve severity/component/code/job/correlation/frame/stage/task/worker/attempt/provider context
 - writes flush and optionally fsync
-- integration tests verify central EventBus → LogSink routing and per-job isolation
 
 #### Diagnostic bundle baseline
 - `DiagnosticBundleBuilder` produces a job-scoped ZIP in PathManager evidence space
 - includes job/task state, durable event history, runtime/environment summary and structured log when available
 - optional effective config is recursively redacted for secret/token/password/credential-like fields
 - source/private image bytes are excluded by default
-- diagnostic output refuses silent overwrite
-- generation is read-only with respect to authoritative processing state
+- diagnostic output refuses silent overwrite and is read-only with respect to processing authority
 
 #### Bounded scheduler / backpressure foundation
-- bounded queued-task capacity and inflight-task capacity
+- bounded queued-task and inflight-task capacity
 - duplicate task identity rejection
 - round-robin fairness across jobs at equal priority
-- job-dispatchability callback keeps lifecycle policy outside scheduler
+- lifecycle admission callback remains outside scheduler logic
 - blocked jobs retain queued tasks without silent loss
-- priority support with configurable burst limit to prevent lower-priority starvation
-- task completion releases inflight capacity
-- durable assignment/attempt/lease authority remains in JobStore/MainBoard, not the scheduler
+- priority burst limit prevents lower-priority starvation
+- durable assignment/attempt/lease authority remains in JobStore/MainBoard
+
+#### Durable scheduler reconstruction
+- ADR-025 accepted: in-memory scheduler is disposable and reconstructed from durable task descriptors
+- `SchedulerReconstructor` rebuilds only PENDING and eligible INTERRUPTED tasks
+- RUNNING/terminal/REVIEW/legacy non-reconstructable tasks are not silently requeued
+- durable priority survives restart
+- unsupported descriptor version/priority fails before partial enqueue
+- queue-capacity overflow is reported as deferred rather than discarded
+- stable job/task ordering is used for deterministic rebuild
+- reconstruction mutates scheduler memory only, never durable task state
+- MainBoard exposes the reconstructor as a control-plane service
 
 #### WorkerManager lifecycle / heartbeat foundation
-- interface-first `WorkerHandle` protocol keeps process backend replaceable and easy to fake in tests
-- worker states: STARTING, READY, BUSY, STOPPING, STOPPED, LOST
-- registration records stable worker identity and process id
-- READY→BUSY→READY task ownership transitions include task id + attempt identity
-- cooperative stop calls the process-handle contract rather than hard-coding multiprocessing behavior
-- heartbeat timestamps use an injectable clock for deterministic tests
-- dead process or heartbeat timeout becomes LOST
-- stale task release is rejected
-- MainBoard composes WorkerManager without embedding worker-process logic into UI or image pipeline
-- concrete multiprocessing/process-pool adapter is intentionally not yet selected; this foundation defines the contract it must satisfy
+- interface-first `WorkerHandle` protocol keeps process backend replaceable and fakeable in tests
+- worker states STARTING, READY, BUSY, STOPPING, STOPPED, LOST
+- task ownership contains task id + attempt identity
+- cooperative stop remains behind process-handle contract
+- injectable clock enables deterministic heartbeat/loss tests
+- dead process or timeout becomes LOST; stale release is rejected
 
 #### Durable dispatch coordination
-- `DispatchCoordinator` bridges in-memory scheduler policy to durable JobStore assignment, runtime TaskLeaseRegistry and WorkerManager ownership
-- durable JobStore assignment occurs before worker execution authority is accepted
-- new attempt number is derived from the durable task record, not scheduler memory
-- durable lease expiry is persisted with worker + attempt identity
-- runtime lease guard and WorkerManager BUSY ownership are established only for the same attempt
-- stale scheduler entries that no longer match durable PENDING/INTERRUPTED state are rejected
-- if runtime assignment fails after durable RUNNING assignment, compensation transitions that exact authoritative attempt to `INTERRUPTED`, releases any runtime lease and releases scheduler inflight capacity
-- automated tests cover successful assignment, runtime-assignment compensation and stale-scheduler rejection
+- `DispatchCoordinator` bridges scheduler policy to durable JobStore assignment, runtime TaskLeaseRegistry and WorkerManager ownership
+- new attempt derives from durable task state
+- durable lease expiry is persisted before worker execution authority is accepted
+- runtime assignment failure compensates the exact authoritative task to INTERRUPTED and releases runtime/inflight ownership
+- stale scheduler entries cannot overwrite durable state
 
 #### Worker-loss watchdog reconciliation
-- `WorkerLossCoordinator` consumes WorkerManager LOST detection and reconciles it against durable task authority
-- only the exact durable RUNNING task owned by the LOST worker/attempt may be interrupted
-- worker-loss transition uses `TASK.INTERRUPTED_BY_WORKER_LOSS`, not FAIL or SUCCESS
-- matching runtime lease is discarded even if already expired
-- scheduler inflight capacity is released when the lost task was dispatched through the scheduler
-- policy may requeue the same scheduled task when queue capacity permits; if requeue is disabled or capacity unavailable, durable state remains INTERRUPTED for later reconstruction
-- idle worker loss does not mutate unrelated task state
-- automated tests cover process death, heartbeat timeout, requeue and no-requeue behavior
+- `WorkerLossCoordinator` reconciles WorkerManager LOST state against exact durable task worker/attempt identity
+- authoritative lost work becomes INTERRUPTED, never false FAIL/SUCCESS
+- matching runtime lease and inflight slot are released
+- optional in-memory requeue is safe when capacity exists
+- idle worker loss does not mutate unrelated tasks
+
+#### Windows worker/IPC contract foundation
+- `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md` defines Windows spawn/process boundary
+- worker process remains computation-only; MainBoard retains all authority
+- Python pickle/domain-object serialization is not the authoritative IPC contract
+- `JsonMessageCodec` uses versioned UTF-8 JSON bytes with explicit size/type/schema validation
+- worker identity can be validated at decode boundary
+- malformed JSON/types, unsupported schema and oversized messages are rejected before publish
+- `JsonMessageSender` / `JsonMessageReceiver` abstract byte channels so real multiprocessing transport is replaceable/testable
+- automated tests cover round trip, UTF-8 data, identity mismatch, invalid types, non-JSON payload and size limits
+- concrete Windows spawn process adapter is intentionally the next phase, not hidden inside the codec
 
 ### Architectural rule
-Workers compute only against immutable input/private scratch. Shared/final mutations are MainBoard-owned. Authoritative job/task/artifact state is durable and single-writer. UI issues commands through application services and never mutates workers or persistence directly. Scheduler controls admission/dispatch only. WorkerManager owns runtime process/liveness state but does not replace durable JobStore authority. Dispatch/watchdog coordination reconciles runtime state to durable authority, never the reverse. `REVIEW > destructive guess` remains unchanged.
+Workers compute only against immutable input/private scratch. Shared/final mutations are MainBoard-owned. Authoritative job/task/artifact state is durable and single-writer. UI issues commands through application services and never mutates workers or persistence directly. Scheduler controls admission/dispatch only. WorkerManager owns runtime process/liveness state but does not replace durable JobStore authority. Runtime state must reconcile to durable authority, never the reverse. `REVIEW > destructive guess` remains unchanged.
 
 ### CI status
-- PathManager/ResourceBroker/JobStore/MainBoard/lifecycle/recovery baseline: Ruff + pytest PASS.
-- JobStore v2 migration/task persistence: Ruff + pytest PASS.
-- durable artifact commit + crash reconciliation fault-injection suite: Ruff + pytest PASS.
-- artifact-first startup recovery integration: Ruff + pytest PASS.
-- observability/diagnostics/scheduler/WorkerManager code head: Ruff + pytest PASS.
-- DispatchCoordinator + worker-loss watchdog code head: Ruff + pytest PASS after one test-only Ruff RUF059 correction.
+- core platform/lifecycle/recovery baseline: Ruff + pytest PASS
+- durable artifact commit + crash reconciliation: Ruff + pytest PASS
+- observability/diagnostics/scheduler/WorkerManager/dispatch/watchdog: Ruff + pytest PASS
+- JobStore v3 migration + durable scheduler reconstruction + JSON IPC codec: Ruff + pytest PASS
 
 ### Known reliability gaps
-- `StartupReconciler` still interrupts multiple tasks then the job using separate SQLite transactions. The sequence is idempotent and safe from false success, but a future store-owned recovery transaction can reduce partial-reconciliation states further.
-- artifact-commit journal currently has its own explicit schema-version metadata inside the JobStore SQLite database rather than being folded into the global JobStore schema migration number; this is intentional modularity for the current foundation and should be reviewed before production schema freeze.
-- diagnostic bundle baseline does not yet enumerate full artifact-commit journal history or provider/dependency inventories beyond available runtime summary.
-- scheduler queue is currently in-memory; deterministic reconstruction from durable JobStore after restart remains to be implemented.
-- WorkerManager still uses an abstract process-handle contract; concrete Windows worker process/message transport remains to be selected and implemented.
-- worker-loss requeue currently preserves the scheduled descriptor in-memory; restart-time reconstruction from durable INTERRUPTED tasks remains a separate requirement.
+- `StartupReconciler` still interrupts multiple tasks then the job using separate SQLite transactions; behavior is idempotent/safe from false success but can be tightened into a store-owned transaction.
+- artifact-commit journal has its own explicit schema-version metadata inside the JobStore database and requires production schema-freeze review.
+- diagnostic bundle does not yet enumerate full artifact-commit journal history/provider inventory.
+- concrete Windows spawn worker process + command/event transport is not yet implemented.
+- reconstructed scheduler descriptors currently restore admission identity/priority; concrete worker execution will validate the full descriptor contract when process transport is connected.
 
 ### Next work packages
-1. scheduler reconstruction from durable task state after pause/resume/restart
-2. concrete Windows process worker adapter and message transport
-3. expand diagnostic bundle with artifact-commit journal and provider inventory
-4. tighten multi-record startup reconciliation transaction where practical
-5. production schema freeze/migration review for all persistence tables
+1. concrete Windows spawn process-worker adapter and command/event channel
+2. connect validated worker heartbeat/result events into EventBus/WorkerManager and task-result handling
+3. real Windows child-process CI smoke test
+4. expand diagnostic bundle with artifact-commit journal/provider inventory
+5. tighten multi-record startup reconciliation transaction where practical
+6. production persistence-schema freeze/migration review
 
 ## Separation from M2
-This platform track is intentionally separate from PR #9 so image-processing verification and control-plane infrastructure can be reviewed independently.
+This platform track remains intentionally separate from PR #9 so image-processing verification and control-plane infrastructure can be reviewed independently.
 
 ## Verification
-Every platform component remains headless-testable. Negative/fault tests cover path ownership, stale writes, duplicate/stale attempts, commit-intent crash boundaries, mismatching artifacts, recovery idempotency, diagnostic redaction/source-image exclusion, queue/inflight bounds, scheduling fairness, worker heartbeat/lifecycle behavior, dispatch compensation and worker-loss interruption/requeue. No final artifact or file-presence heuristic can bypass durable task/job state.
+Platform components remain headless-testable. Negative/fault tests cover path ownership, stale writes, task attempts, crash boundaries, artifact integrity, recovery idempotency, diagnostics safety, scheduler bounds/fairness/reconstruction, worker liveness, dispatch compensation and IPC validation. No file-presence heuristic or runtime-only state may bypass durable authority.
 
-References: `31_STATE_MACHINE_SPEC.md`, `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`, `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`, `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`, `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`, `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`, ADR-017 through ADR-024.
+References: `31_STATE_MACHINE_SPEC.md`, `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`, `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`, `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`, `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`, `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`, `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`, ADR-017 through ADR-025.
