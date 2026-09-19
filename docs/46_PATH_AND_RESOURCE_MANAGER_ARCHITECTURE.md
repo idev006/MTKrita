@@ -1,7 +1,7 @@
 # MTKrita Path and Resource Manager Architecture
 
 ## Status
-SSOT — Architecture Baseline v1.0
+SSOT — Architecture Baseline v1.1
 
 ## Purpose
 กำหนดกติกาการอ้างอิง path และการเข้าถึง resource ภายใน MTKrita เพื่อป้องกัน path กระจัดกระจาย, accidental overwrite, race condition และ shared-resource conflict โดยให้ระบบมีจุดควบคุมกลางที่ตรวจสอบและทดสอบได้
@@ -111,21 +111,52 @@ A worker shall not directly mutate:
 
 ## 8. Atomic Output Rule
 
-Critical output writes use a two-phase pattern:
+Critical output writes use a recovery-safe two-resource pattern:
 
 ```text
 allocate private temp target
   ↓
 write + flush + validate + hash
   ↓
-report completion to MainBoard/ResourceBroker
+report candidate + task/attempt identity to MainBoard
   ↓
-atomic promote/rename to final path
+persist durable COMMIT_INTENT in JobStore
   ↓
-record artifact in JobStore/Manifest
+ResourceBroker atomic promote/rename to final path
+  ↓
+verify final path hash/identity
+  ↓
+finalize durable artifact/task state in JobStore
+  ↓
+publish committed event
 ```
 
-This prevents partially written files from appearing as completed outputs.
+The durable intent is mandatory for authoritative output/evidence publication that participates in task completion. It bridges the fact that filesystem rename and SQLite commit cannot be one native ACID transaction.
+
+### 8.1 Commit Intent Identity
+A commit intent records at least:
+- commit id
+- job id
+- task id
+- worker id
+- attempt
+- expected task generation
+- source worker-scratch reference/path identity
+- final PathManager-resolved target identity
+- expected SHA-256
+- byte size when known
+- state: `INTENT`, `PROMOTED`, `COMMITTED`, `FAILED_INTEGRITY` or equivalent
+- created/updated timestamps
+
+### 8.2 Crash Reconciliation
+On restart:
+- intent + no final file → incomplete; keep/retry according to authoritative task state;
+- intent + matching final file → eligible for idempotent durable finalization if task/attempt remains authoritative;
+- intent + mismatching final file/hash → integrity error / REVIEW or FAIL policy; never overwrite silently;
+- stale/superseded task attempt → cannot claim or finalize the artifact;
+- committed records are immutable completion evidence except explicit retention/deletion operations.
+
+Final file existence alone never establishes successful task/job completion.
 
 ## 9. Security Rules
 
@@ -158,6 +189,8 @@ Concrete signatures may evolve, but application code must preserve the centraliz
 - source-overwrite tests pass
 - parallel reservation of identical final target does not corrupt output
 - crash during write leaves no artifact marked COMPLETE
+- crash after filesystem promotion but before database finalization is reconciled deterministically from commit intent + final hash
+- stale attempts cannot finalize or overwrite authoritative artifact identity
 
 ## 12. Relationship to Other SSOT
 
@@ -166,3 +199,4 @@ Concrete signatures may evolve, but application code must preserve the centraliz
 - `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
 - `35_INTERFACE_AND_STAGE_CONTRACTS.md`
 - `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
+- ADR-017, ADR-019, ADR-020 and ADR-024
