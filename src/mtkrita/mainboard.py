@@ -11,7 +11,7 @@ from .event_bus import InProcessEventBus
 from .job_lifecycle import JobLifecycleController
 from .job_store import JobStore
 from .path_manager import PathManager
-from .recovery import StartupReconciler
+from .recovery import StartupReconciler, StartupRecoveryCoordinator
 from .resource_broker import ResourceBroker
 from .task_leases import TaskLeaseRegistry
 
@@ -30,6 +30,7 @@ class MainBoard:
     artifact_journal: ArtifactCommitJournal
     artifact_commits: ArtifactCommitCoordinator
     artifact_recovery: ArtifactCommitReconciler
+    startup_recovery: StartupRecoveryCoordinator
 
     @classmethod
     def compose(
@@ -43,6 +44,8 @@ class MainBoard:
         resources = ResourceBroker(paths)
         artifact_journal = ArtifactCommitJournal(jobs)
         artifact_journal.initialize()
+        recovery = StartupReconciler(jobs)
+        artifact_recovery = ArtifactCommitReconciler(artifact_journal, resources, jobs)
         return cls(
             paths=paths,
             resources=resources,
@@ -50,8 +53,9 @@ class MainBoard:
             events=events or InProcessEventBus(),
             leases=leases or TaskLeaseRegistry(),
             lifecycle=JobLifecycleController(jobs),
-            recovery=StartupReconciler(jobs),
+            recovery=recovery,
             artifact_journal=artifact_journal,
             artifact_commits=ArtifactCommitCoordinator(artifact_journal, resources),
-            artifact_recovery=ArtifactCommitReconciler(artifact_journal, resources, jobs),
+            artifact_recovery=artifact_recovery,
+            startup_recovery=StartupRecoveryCoordinator(artifact_recovery, recovery),
         )
