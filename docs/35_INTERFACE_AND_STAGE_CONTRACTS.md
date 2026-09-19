@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.3
+SSOT — Stage Contract Baseline v1.4
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -65,10 +65,13 @@ Every replaceable provider should expose:
 **Provider boundary:** `BorderProcessingProvider`  
 **Input:** extracted frame  
 **Output:** border detection + cleaned/unchanged frame  
-**Evidence:** side, thickness, color/range, continuity, confidence, inner-edge contact risk  
-**Review:** border/artwork ambiguity or same/near-border-color content touching the inner border boundary  
-**Prohibited:** global color deletion; automatic crop when border/artwork contact risk is detected  
-**Rule:** high outer-edge confidence alone is insufficient when topology/contact evidence indicates possible artwork loss
+**Evidence:** side, inset offset from frame edge, thickness, color/range, continuity, confidence, inner-edge contact risk  
+**Review:** border/artwork or border/metadata ambiguity; same/near-border-color content touching the inner border boundary  
+**Prohibited:** global color deletion; automatic crop when border/artwork or border/metadata contact risk is detected  
+**Rule:** a border may begin at offset 0 or after bounded transparent/empty near-edge padding  
+**Rule:** inset-border fallback requires multi-side consensus (or equivalently strong topology evidence); a single candidate strip cannot authorize destructive crop  
+**Rule:** high strip/color confidence alone is insufficient when topology/contact evidence indicates possible artwork loss  
+**Rule:** detecting an inset border with contact risk is useful evidence but must remain `REVIEW` until a separately approved joint-cleanup contract exists
 
 ## S-05 Source Transparency Classification
 **Domain service:** MTKrita-owned routing/provenance service  
@@ -135,7 +138,7 @@ Every replaceable provider should expose:
 **Input:** job/frame/stage outcomes  
 **Output:** machine-readable manifest + summary  
 **Invariant:** sufficient traceability to source/config/version  
-**Required provenance:** extraction method/confidence, source transparency decision, metadata cleanup evidence, significant actions/findings, final output reference/hash
+**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup evidence, significant actions/findings, final output reference/hash
 
 ## Provider Registry / Factory
 Provider selection shall be resolved during job initialization from validated TOML configuration.
