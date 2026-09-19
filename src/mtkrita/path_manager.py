@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-
 _SAFE_ID_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
 )
@@ -42,15 +41,6 @@ class PathManager:
             raise ValueError(f"invalid {label}")
         return value
 
-    @staticmethod
-    def _validate_filename(filename: str) -> str:
-        candidate = Path(filename)
-        if not filename or candidate.name != filename or filename in {".", ".."}:
-            raise ValueError("filename must be a single path component")
-        if "\x00" in filename:
-            raise ValueError("filename contains NUL")
-        return filename
-
     def _job_root_path(self, job_id: str) -> Path:
         safe_job = self._validate_id(job_id, "job_id")
         return self._root / "jobs" / safe_job
@@ -65,16 +55,6 @@ class PathManager:
             self._job_root_path(job_id) / "scratch" / safe_worker,
             job_id,
             safe_worker,
-        )
-
-    def worker_file(self, job_id: str, worker_id: str, filename: str) -> PathRef:
-        directory = self.worker_scratch(job_id, worker_id)
-        safe_name = self._validate_filename(filename)
-        return PathRef(
-            PathKind.WORKER_SCRATCH,
-            directory.path / safe_name,
-            job_id,
-            directory.worker_id,
         )
 
     def output(self, job_id: str, filename: str) -> PathRef:
@@ -92,6 +72,15 @@ class PathManager:
     def log(self, job_id: str, filename: str = "events.jsonl") -> PathRef:
         safe_name = self._validate_filename(filename)
         return PathRef(PathKind.LOG, self._job_root_path(job_id) / "logs" / safe_name, job_id)
+
+    @staticmethod
+    def _validate_filename(filename: str) -> str:
+        candidate = Path(filename)
+        if not filename or candidate.name != filename or filename in {".", ".."}:
+            raise ValueError("filename must be a single path component")
+        if "\x00" in filename:
+            raise ValueError("filename contains NUL")
+        return filename
 
     def prepare_job(self, job_id: str) -> PathRef:
         root = self.job_root(job_id)
