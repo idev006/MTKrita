@@ -129,6 +129,32 @@ def test_ambiguous_metadata_cannot_authorize_joint_cleanup() -> None:
     assert "metadata cleanup mask is absent" in plan.reasons[0]
 
 
+def test_exclusion_fragmented_metadata_cannot_authorize_joint_cleanup() -> None:
+    image, border, metadata = _case()
+    fragmented = MetadataDetection(
+        bbox=metadata.bbox,
+        confidence=metadata.confidence,
+        mask=metadata.mask,
+        reason="single dominant anchored candidate; exclusion intersects pixels",
+        candidate_count=1,
+        anchored_candidate_count=1,
+        area_ratio=metadata.area_ratio,
+        fill_ratio=metadata.fill_ratio,
+        compactness=metadata.compactness,
+        anchor_distance=metadata.anchor_distance,
+        dominance_margin=metadata.dominance_margin,
+        analysis_exclusion_applied=True,
+        analysis_excluded_pixel_count=40,
+        analysis_excluded_candidate_pixel_count=12,
+        fragmented_by_exclusion=True,
+    )
+
+    plan = plan_joint_cleanup(image, border, fragmented)
+
+    assert plan.status == JointCleanupStatus.REVIEW
+    assert "completeness unresolved" in plan.reasons[0]
+
+
 def test_spatial_border_mask_preserves_different_color_artwork_crossing_band() -> None:
     image, border, _ = _case()
     draw = ImageDraw.Draw(image)

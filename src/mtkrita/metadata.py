@@ -29,6 +29,11 @@ class MetadataDetection:
     compactness: float | None = None
     anchor_distance: float | None = None
     dominance_margin: float | None = None
+    analysis_exclusion_applied: bool = False
+    analysis_excluded_pixel_count: int = 0
+    analysis_excluded_candidate_pixel_count: int = 0
+    fragmented_by_exclusion: bool = False
+    coordinate_space: str = "pre_cleanup_frame"
 
 
 @dataclass(frozen=True)
@@ -61,10 +66,42 @@ def _background_rgb(rgba: np.ndarray) -> np.ndarray:
     return np.median(visible, axis=0)
 
 
+def _analysis_exclusion(
+    image: Image.Image,
+    analysis_exclusion_mask: Image.Image | None,
+    raw_candidate: np.ndarray,
+    zone_width: int,
+    zone_height: int,
+) -> tuple[np.ndarray, dict[str, object]]:
+    candidate_mask = raw_candidate.copy()
+    if analysis_exclusion_mask is None:
+        return candidate_mask, {
+            "analysis_exclusion_applied": False,
+            "analysis_excluded_pixel_count": 0,
+            "analysis_excluded_candidate_pixel_count": 0,
+            "fragmented_by_exclusion": False,
+        }
+    if analysis_exclusion_mask.size != image.size:
+        raise ValueError("analysis exclusion mask size does not match frame")
+
+    exclusion = np.asarray(analysis_exclusion_mask.convert("L"), dtype=np.uint8) > 0
+    zone_exclusion = exclusion[:zone_height, :zone_width]
+    raw_visible = raw_candidate > 0
+    excluded_candidate = int(np.count_nonzero(raw_visible & zone_exclusion))
+    candidate_mask[zone_exclusion] = 0
+    return candidate_mask, {
+        "analysis_exclusion_applied": True,
+        "analysis_excluded_pixel_count": int(np.count_nonzero(exclusion)),
+        "analysis_excluded_candidate_pixel_count": excluded_candidate,
+        "fragmented_by_exclusion": excluded_candidate > 0,
+    }
+
+
 def detect_corner_metadata(
     image: Image.Image,
     *,
     zone: MetadataZone | None = None,
+    analysis_exclusion_mask: Image.Image | None = None,
     color_tolerance: int = 24,
     min_area_ratio: float = 0.002,
     max_area_ratio: float = 0.50,
@@ -98,11 +135,24 @@ def detect_corner_metadata(
     zone_rgb = rgb[:zone_height, :zone_width, :]
     zone_alpha = alpha[:zone_height, :zone_width]
     distance = np.max(np.abs(zone_rgb - background), axis=2)
-    candidate_mask = ((distance > color_tolerance) & (zone_alpha > 8)).astype(np.uint8) * 255
+    raw_candidate = ((distance > color_tolerance) & (zone_alpha > 8)).astype(np.uint8) * 255
+    candidate_mask, exclusion_evidence = _analysis_exclusion(
+        image,
+        analysis_exclusion_mask,
+        raw_candidate,
+        zone_width,
+        zone_height,
+    )
 
     count, labels, stats, _ = cv2.connectedComponentsWithStats(candidate_mask, connectivity=8)
     if count <= 1:
-        return MetadataDetection(None, 0.0, None, "no compact metadata component found")
+        return MetadataDetection(
+            None,
+            0.0,
+            None,
+            "no compact metadata component found",
+            **exclusion_evidence,
+        )
 
     zone_area = zone_width * zone_height
     candidates: list[_MetadataCandidate] = []
@@ -142,7 +192,13 @@ def detect_corner_metadata(
         )
 
     if not candidates:
-        return MetadataDetection(None, 0.0, None, "no candidate passed metadata constraints")
+        return MetadataDetection(
+            None,
+            0.0,
+            None,
+            "no candidate passed metadata constraints",
+            **exclusion_evidence,
+        )
 
     plausible = [
         candidate
@@ -159,6 +215,7 @@ def detect_corner_metadata(
             "no anchored metadata candidate passed shape constraints",
             candidate_count=len(candidates),
             anchored_candidate_count=0,
+            **exclusion_evidence,
         )
 
     plausible.sort(reverse=True, key=lambda item: item.confidence)
@@ -177,16 +234,20 @@ def detect_corner_metadata(
             compactness=best.compactness,
             anchor_distance=best.anchor_distance,
             dominance_margin=float(margin),
+            **exclusion_evidence,
         )
 
     full_mask = np.zeros((height, width), dtype=np.uint8)
     local = (labels == best.label).astype(np.uint8) * 255
     full_mask[:zone_height, :zone_width] = local
+    reason = "single dominant anchored top-left metadata candidate"
+    if bool(exclusion_evidence["fragmented_by_exclusion"]):
+        reason += "; analysis exclusion intersects candidate pixels"
     return MetadataDetection(
         bbox=best.bbox,
         confidence=best.confidence,
         mask=Image.fromarray(full_mask),
-        reason="single dominant anchored top-left metadata candidate",
+        reason=reason,
         candidate_count=len(candidates),
         anchored_candidate_count=len(plausible),
         area_ratio=best.area_ratio,
@@ -194,6 +255,7 @@ def detect_corner_metadata(
         compactness=best.compactness,
         anchor_distance=best.anchor_distance,
         dominance_margin=float(margin),
+        **exclusion_evidence,
     )
 
 
@@ -205,6 +267,8 @@ def remove_detected_metadata(
 ) -> Image.Image:
     if detection.mask is None or detection.bbox is None:
         raise ValueError("no removable metadata mask")
+    if detection.fragmented_by_exclusion:
+        raise ValueError("metadata mask completeness unresolved after analysis exclusion")
     if detection.confidence < auto_threshold:
         raise ValueError("metadata confidence below automatic removal threshold")
 

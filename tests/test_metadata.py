@@ -15,6 +15,8 @@ def test_detects_and_removes_top_left_badge_without_touching_artwork_elsewhere()
     assert detection.anchored_candidate_count == 1
     assert detection.anchor_distance is not None
     assert detection.dominance_margin == 1.0
+    assert detection.analysis_exclusion_applied is False
+    assert detection.fragmented_by_exclusion is False
 
     result = remove_detected_metadata(image, detection)
     assert result.getpixel((20, 20))[3] == 0
@@ -93,3 +95,54 @@ def test_custom_anchor_envelope_is_validated_and_applied() -> None:
 
     assert strict.mask is None
     assert relaxed.mask is not None
+
+
+def test_analysis_exclusion_outside_candidate_does_not_change_badge_selection() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((8, 8, 34, 34), fill=(180, 220, 120, 255))
+    exclusion = Image.new("L", image.size, 0)
+    ImageDraw.Draw(exclusion).rectangle((45, 0, 49, 39), fill=255)
+
+    detection = detect_corner_metadata(image, analysis_exclusion_mask=exclusion)
+
+    assert detection.mask is not None
+    assert detection.analysis_exclusion_applied is True
+    assert detection.analysis_excluded_pixel_count > 0
+    assert detection.analysis_excluded_candidate_pixel_count == 0
+    assert detection.fragmented_by_exclusion is False
+
+
+def test_analysis_exclusion_intersecting_candidate_marks_completeness_unresolved() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((8, 8, 34, 34), fill=(180, 220, 120, 255))
+    exclusion = Image.new("L", image.size, 0)
+    ImageDraw.Draw(exclusion).line((8, 12, 8, 30), fill=255, width=1)
+
+    detection = detect_corner_metadata(image, analysis_exclusion_mask=exclusion)
+
+    assert detection.analysis_exclusion_applied is True
+    assert detection.analysis_excluded_candidate_pixel_count > 0
+    assert detection.fragmented_by_exclusion is True
+    assert "analysis exclusion" in detection.reason
+    assert detection.mask is not None
+
+    try:
+        remove_detected_metadata(image, detection)
+    except ValueError as exc:
+        assert "completeness unresolved" in str(exc)
+    else:
+        raise AssertionError("expected exclusion-fragmented metadata removal refusal")
+
+
+def test_analysis_exclusion_size_mismatch_is_rejected() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
+    exclusion = Image.new("L", (40, 40), 0)
+
+    try:
+        detect_corner_metadata(image, analysis_exclusion_mask=exclusion)
+    except ValueError as exc:
+        assert "size does not match" in str(exc)
+    else:
+        raise AssertionError("expected exclusion-mask size validation failure")

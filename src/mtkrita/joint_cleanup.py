@@ -194,6 +194,11 @@ def plan_joint_cleanup(
         return _review_plan("metadata confidence below automatic threshold", confidence=confidence)
     if metadata.anchored_candidate_count != 1:
         return _review_plan("metadata candidate is not uniquely anchored", confidence=confidence)
+    if metadata.fragmented_by_exclusion:
+        return _review_plan(
+            "metadata mask completeness unresolved after analysis exclusion",
+            confidence=confidence,
+        )
 
     explained, unexplained, localization_reasons = _contact_accounting(
         border,
