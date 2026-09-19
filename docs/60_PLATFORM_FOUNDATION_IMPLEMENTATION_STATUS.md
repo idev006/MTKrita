@@ -1,7 +1,7 @@
 # MTKrita Platform Foundation Implementation Status
 
 ## Status
-SSOT — Platform Foundation Implementation Track v2.1
+SSOT — Platform Foundation Implementation Track v2.2
 
 ## Purpose
 Track implementation of the approved PathManager/MainBoard/ResourceBroker/multi-worker control-plane architecture separately from M2 image-processing work.
@@ -148,7 +148,7 @@ Workers compute only against immutable input/private scratch. Shared/final mutat
 - durable artifact commit + crash reconciliation fault-injection suite: Ruff + pytest PASS.
 - artifact-first startup recovery integration: Ruff + pytest PASS.
 - observability/diagnostics/scheduler/WorkerManager code head: Ruff + pytest PASS.
-- DispatchCoordinator + worker-loss watchdog head requires fresh green Ruff + pytest evidence before this revision is considered verified.
+- DispatchCoordinator + worker-loss watchdog code head: Ruff + pytest PASS after one test-only Ruff RUF059 correction.
 
 ### Known reliability gaps
 - `StartupReconciler` still interrupts multiple tasks then the job using separate SQLite transactions. The sequence is idempotent and safe from false success, but a future store-owned recovery transaction can reduce partial-reconciliation states further.
