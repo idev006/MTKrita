@@ -69,3 +69,31 @@ OpenCV, Pillow, ImageMagick or future ML providers may implement lower-level ima
 **Status:** Accepted
 
 Approved SSOT documents define product behavior, architecture, processing rules, acceptance criteria and release gates before or together with implementation. Source code and GitHub execution records must not silently redefine upstream requirements. Critical changes require synchronized requirement/design/test/traceability evidence before completion.
+
+## ADR-015 — Interface-First Provider Boundaries
+**Status:** Accepted
+
+All replaceable processing capabilities shall be accessed through explicit provider interfaces or protocols. The Python orchestrator depends on contracts, not concrete OpenCV/Pillow/ImageMagick/ML implementations. Concrete providers may be swapped through configuration without changing sticker-domain workflow code where practical.
+
+Mandatory provider boundaries include, at minimum:
+- layout/grid detection
+- border detection/removal
+- frame metadata detection/removal
+- background classification/removal
+- content analysis
+- image transform/smart fit
+- export
+
+Provider interfaces must return structured results/evidence rather than only modified images.
+
+## ADR-016 — TOML Is the Canonical Configuration Format
+**Status:** Accepted
+
+Human-maintained MTKrita configuration shall use TOML as the canonical format. Python 3.11+ shall load TOML using the standard-library `tomllib` for read operations. Runtime configuration models validate parsed data before pipeline execution.
+
+Rules:
+- configuration is external to source code where behavior is intended to be configurable
+- shipped profiles are version-controlled TOML files
+- unknown/invalid critical keys fail validation rather than being silently ignored
+- config hashes are included in job evidence for reproducibility
+- JSON remains acceptable for machine-generated manifests/evidence; TOML is the human configuration standard
