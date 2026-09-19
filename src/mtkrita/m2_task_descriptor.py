@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from .path_manager import PathManager, PathRef
+
+if TYPE_CHECKING:
+    from .job_store import TaskDescriptorRecord, TaskRecord
+    from .worker_tasks import ProvisionalArtifact
 
 M2_FRAME_TASK_TYPE = "m2.frame"
 M2_FRAME_DESCRIPTOR_VERSION = 1
@@ -139,6 +145,29 @@ def parse_m2_frame_descriptor(
             metadata_auto_threshold=metadata_auto_threshold,
         ),
     )
+
+
+class M2FrameTargetResolver:
+    """Resolve final M2 output only from a validated durable descriptor."""
+
+    def __init__(self, paths: PathManager) -> None:
+        self._paths = paths
+
+    def resolve(
+        self,
+        *,
+        task: TaskRecord,
+        descriptor: TaskDescriptorRecord,
+        artifact: ProvisionalArtifact,
+    ) -> PathRef:
+        del artifact
+        if descriptor.task_id != task.task_id or descriptor.job_id != task.job_id:
+            raise M2TaskDescriptorError("M2 target descriptor identity mismatch")
+        parsed = parse_m2_frame_descriptor(
+            descriptor.descriptor,
+            descriptor_version=descriptor.descriptor_version,
+        )
+        return self._paths.output(task.job_id, parsed.output_name)
 
 
 def _safe_filename(value: object, label: str) -> str:
