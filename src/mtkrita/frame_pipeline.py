@@ -34,6 +34,19 @@ def _finding(code: str, message: str, **measurements: object) -> Finding:
     return Finding(code=code, severity="REVIEW", message=message, measurements=dict(measurements))
 
 
+def _route_evidence(decision: TransparencyDecision) -> dict[str, object]:
+    return {
+        "background_route": decision.route.value,
+        "route_provenance": decision.provenance,
+        "has_alpha_channel": decision.has_alpha_channel,
+        "meaningful_transparency": decision.meaningful_transparency,
+        "alpha_min": decision.alpha_min,
+        "alpha_max": decision.alpha_max,
+        "transparent_pixel_ratio": decision.transparent_pixel_ratio,
+        "route_reason": decision.reason,
+    }
+
+
 def process_frame(
     image: Image.Image,
     *,
@@ -41,6 +54,8 @@ def process_frame(
     row: int,
     column: int,
     extraction_rect: tuple[int, int, int, int] | None = None,
+    extraction_method: str | None = None,
+    extraction_confidence: float | None = None,
     config: FramePipelineConfig | None = None,
 ) -> FramePipelineOutput:
     """Run the M2 frame workflow without opaque-background segmentation.
@@ -53,9 +68,12 @@ def process_frame(
     working = image.copy()
     actions: list[str] = []
     findings: list[Finding] = []
+    evidence: dict[str, object] = {}
 
     if cfg.remove_border:
         border = detect_border(working)
+        evidence["border_detected"] = border.detected
+        evidence["border_confidence"] = border.confidence
         if border.detected:
             if border.confidence < cfg.border_auto_threshold:
                 findings.append(
@@ -66,6 +84,7 @@ def process_frame(
                     )
                 )
                 decision = decide_source_background_route(working)
+                evidence.update(_route_evidence(decision))
                 return FramePipelineOutput(
                     image=working,
                     transparency=decision,
@@ -75,6 +94,8 @@ def process_frame(
                         column=column,
                         status=FrameStatus.REVIEW,
                         extraction_rect=extraction_rect,
+                        extraction_method=extraction_method,
+                        extraction_confidence=extraction_confidence,
                         processing_mode=(
                             ProcessingMode.TRANSPARENT
                             if decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND
@@ -82,6 +103,7 @@ def process_frame(
                         ),
                         findings=findings,
                         actions=actions,
+                        evidence=evidence,
                     ),
                 )
             working = remove_border(
@@ -93,9 +115,13 @@ def process_frame(
 
     # SSOT/ADR-023: capture source-frame routing before alpha-generating cleanup.
     source_decision = decide_source_background_route(working)
+    evidence.update(_route_evidence(source_decision))
 
     if cfg.remove_metadata:
         metadata = detect_corner_metadata(working)
+        evidence["metadata_confidence"] = metadata.confidence
+        evidence["metadata_reason"] = metadata.reason
+        evidence["metadata_bbox"] = metadata.bbox
         if metadata.mask is not None and metadata.bbox is not None:
             if metadata.confidence < cfg.metadata_auto_threshold:
                 findings.append(
@@ -127,20 +153,24 @@ def process_frame(
         else ProcessingMode.OPAQUE
     )
 
+    common = {
+        "index": index,
+        "row": row,
+        "column": column,
+        "extraction_rect": extraction_rect,
+        "extraction_method": extraction_method,
+        "extraction_confidence": extraction_confidence,
+        "processing_mode": mode,
+        "findings": findings,
+        "actions": actions,
+        "evidence": evidence,
+    }
+
     if findings:
         return FramePipelineOutput(
             image=working,
             transparency=source_decision,
-            result=FrameResult(
-                index=index,
-                row=row,
-                column=column,
-                status=FrameStatus.REVIEW,
-                extraction_rect=extraction_rect,
-                processing_mode=mode,
-                findings=findings,
-                actions=actions,
-            ),
+            result=FrameResult(status=FrameStatus.REVIEW, **common),
         )
 
     if source_decision.route == BackgroundRoute.REMOVE_BACKGROUND:
@@ -154,42 +184,30 @@ def process_frame(
         return FramePipelineOutput(
             image=working,
             transparency=source_decision,
-            result=FrameResult(
-                index=index,
-                row=row,
-                column=column,
-                status=FrameStatus.REVIEW,
-                extraction_rect=extraction_rect,
-                processing_mode=ProcessingMode.OPAQUE,
-                findings=findings,
-                actions=actions,
-            ),
+            result=FrameResult(status=FrameStatus.REVIEW, **common),
         )
 
     content = analyze_alpha_content(working)
+    evidence["pre_fit_content_bbox"] = content.bbox
+    evidence["pre_fit_occupancy_ratio"] = content.occupancy_ratio
+    evidence["pre_fit_touches_edge"] = content.touches_edge
     if content.bbox is None:
         findings.append(_finding("CONTENT.EMPTY", "No visible sticker content was detected"))
         return FramePipelineOutput(
             image=working,
             transparency=source_decision,
-            result=FrameResult(
-                index=index,
-                row=row,
-                column=column,
-                status=FrameStatus.FAIL,
-                extraction_rect=extraction_rect,
-                processing_mode=ProcessingMode.TRANSPARENT,
-                findings=findings,
-                actions=actions,
-            ),
+            result=FrameResult(status=FrameStatus.FAIL, **common),
         )
 
     fitted = fit_rgba_to_canvas(working, cfg.target_size, margin=cfg.margin)
+    evidence["fit_scale"] = fitted.scale
+    evidence["fit_offset"] = fitted.offset
     if fitted.scale != 1.0 or fitted.offset != (0, 0):
         actions.append("SMART_FIT")
     working = fitted.image
 
     validation = validate_static_sticker(working)
+    evidence["export_findings"] = validation.findings
     if not validation.valid:
         findings.extend(
             _finding(code=f"EXPORT.{code}", message=f"Export profile violation: {code}")
@@ -204,14 +222,8 @@ def process_frame(
         image=working,
         transparency=source_decision,
         result=FrameResult(
-            index=index,
-            row=row,
-            column=column,
             status=status,
-            extraction_rect=extraction_rect,
-            processing_mode=ProcessingMode.TRANSPARENT,
             content_bbox=final_content.bbox,
-            findings=findings,
-            actions=actions,
+            **common,
         ),
     )
