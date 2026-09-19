@@ -76,7 +76,7 @@ class CandidateResultCoordinator:
 
         task = self._require_authority(message)
         if result.status == TaskCandidateStatus.SUCCEEDED:
-            return self._accept_success(message, task, result)
+            return self._accept_success(task, result)
         if result.artifacts:
             raise CandidateResultError("non-success candidate must not publish artifacts")
         if result.status == TaskCandidateStatus.REVIEW:
@@ -102,7 +102,6 @@ class CandidateResultCoordinator:
 
     def _accept_success(
         self,
-        message: MessageEnvelope,
         task: TaskRecord,
         result: TaskCandidateResult,
     ) -> CandidateOutcome:
