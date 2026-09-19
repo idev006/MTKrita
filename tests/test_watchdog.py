@@ -65,7 +65,7 @@ def _setup(tmp_path: Path):
 
 
 def test_lost_worker_interrupts_authoritative_task_and_requeues(tmp_path: Path) -> None:
-    clock, store, scheduler, _workers, handle, leases, watchdog = _setup(tmp_path)
+    _clock, store, scheduler, _workers, handle, leases, watchdog = _setup(tmp_path)
     handle.alive = False
 
     outcomes = watchdog.reconcile_lost(heartbeat_timeout_seconds=60, requeue=True)
