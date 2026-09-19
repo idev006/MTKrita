@@ -1,26 +1,38 @@
 # LINE Export Profile
 
+## Status
+Baseline verified against official LINE Creators Market static-sticker guideline on 2026-09-19. Official LINE documentation remains authoritative at release time and must be rechecked before declaring a build submission-ready.
+
 ## Purpose
-LINE-specific constraints are isolated from the core engine so rules can be updated without rewriting image-processing logic.
+LINE-specific constraints are isolated from the core engine so requirements can be updated without rewriting image-processing logic.
 
 ## Static Sticker Baseline
-The project currently targets standard static LINE stickers. Before every production release, verify the current official LINE Creators Market guidelines.
-
-Reference assumptions for the initial profile:
-- PNG output
-- RGB/RGBA
-- transparent sticker background
-- sticker image maximum canvas: 370 × 320 px
+Current official requirements include:
+- sticker count: 8 / 16 / 24 / 32 / 40
+- sticker image: maximum 370 × 320 px
 - main image: 240 × 240 px
-- chat thumbnail/tab image: 96 × 74 px
-- allowed set counts include 8 / 16 / 24 / 32 / 40
+- chat thumbnail icon: 96 × 74 px
+- PNG format
+- RGB color mode
+- transparent image background
+- even-numbered width and height
+- at least 72 dpi guidance
+- maximum 1 MB per image
+- ZIP upload maximum 60 MB when all images are submitted together
+- LINE recommends around 10 px margin between trimmed image and surrounding content, considering overall visual balance
+
+Official source: https://creator.line.me/en/guideline/sticker/
 
 ## Working Frame vs Final Export
 
 ```text
-Working frame (e.g. 512×512)
+Working frame (for example 512×512 or larger)
         ↓
-Content analysis + smart fit
+Border/foreground/content analysis
+        ↓
+Smart fit on lossless working representation
+        ↓
+Single final target resize when required
         ↓
 LINE export canvas/profile
         ↓
@@ -29,18 +41,22 @@ Final PNG
 
 The 512×512 source cell is never assumed to be the final upload size.
 
-## Config Example
+## Default Profile Candidate
 
 ```yaml
 profile:
   id: line_static
+  verified_date: 2026-09-19
   output_format: png
   color_mode: RGBA
   max_width: 370
   max_height: 320
   require_even_dimensions: true
   transparent_background: true
+  min_dpi_guidance: 72
+  recommended_content_margin_px: 10
   max_file_size_bytes: 1048576
+  max_zip_size_bytes: 62914560
   allowed_counts: [8, 16, 24, 32, 40]
   main_image:
     width: 240
@@ -50,4 +66,8 @@ profile:
     height: 74
 ```
 
-Official LINE documentation remains authoritative at release time.
+## Validation Rules
+A frame cannot be labeled LINE-ready unless all blocking profile checks pass. MTKrita must distinguish source working size from final export size and must not degrade source quality by repeatedly resizing intermediate artifacts.
+
+## Versioning
+Every release manifest should record the export-profile version and verification date used to generate the package.
