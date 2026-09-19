@@ -141,19 +141,32 @@ UI design rules:
 - favor visual previews/overlays over technical explanations where practical
 - UI communicates with MainBoard/application services, never directly with workers/providers/shared mutable stores
 
-## ADR-022 — Design for Testability and Automated Verification
+## ADR-022 — Design for Automated Testability
 **Status:** Accepted
 
-Testability is a first-class architecture property. Critical modules must be designed so they can be exercised headlessly and automatically without UI interaction.
+Critical MTKrita behavior shall be designed for automated testing from the start. Business logic must remain headless-capable and dependencies that affect behavior or external state must have explicit replaceable seams where practical.
 
-Rules:
-- inject/replace infrastructure and provider dependencies where needed
-- avoid hidden global mutable state
-- provide stable seams for filesystem/path, time, ID generation, stores, broker, transport and provider behavior
-- business/domain logic must be independently testable
-- provider implementations must pass shared contract tests
-- CI must run automated unit/component/contract tests and selected regression fixtures
-- critical reliability behavior must support automated fault-injection and recovery tests
-- every reproducible critical defect should become a permanent regression test
+Required principles:
+- pure/deterministic functions where appropriate
+- dependency injection for providers, clocks, stores, path/resource services and worker transports where test substitution is useful
+- fake/mock/in-memory implementations for critical infrastructure boundaries
+- provider contract tests shared across implementations
+- automated unit/component/integration/E2E/regression tests in CI
+- fault-injection and recovery tests for leases, retries, pause/resume, atomic commit and startup reconciliation
+- every reproducible Critical/Major defect should become a permanent regression case
 
-Reference: `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`.
+Testability requirements must not be bypassed by moving critical logic into UI callbacks, process globals or concrete provider classes.
+
+## ADR-023 — Source Transparency Classification Precedes Alpha-Generating Cleanup
+**Status:** Accepted
+
+The routing decision for conditional background removal shall be based on the extracted frame state **before any cleanup operation that can create or materially alter alpha**, including frame-number/metadata removal implemented by making pixels transparent.
+
+Required behavior:
+- capture `SourceTransparencyDecision` (or equivalent provenance record) after split and safe border handling, before metadata cleanup that can generate alpha;
+- metadata detection may produce a mask/evidence object without changing the routing provenance;
+- for originally transparent frames, preserve source alpha and apply approved metadata cleanup without invoking background segmentation;
+- for originally opaque frames, metadata-generated transparency must not cause the frame to bypass required background removal;
+- manifests/tests must record source transparency provenance separately from final alpha state.
+
+This decision prevents alpha introduced by cleanup from being mistaken for transparency that existed in the source artwork.
