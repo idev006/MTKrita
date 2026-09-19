@@ -39,6 +39,8 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `34_DATA_FLOW_AND_ARTIFACT_LIFECYCLE.md`
 - `35_INTERFACE_AND_STAGE_CONTRACTS.md`
 - `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
+- `44_PROVIDER_INTERFACE_ARCHITECTURE.md`
+- `45_TOML_CONFIGURATION_SPEC.md`
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
@@ -72,6 +74,12 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
 - `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md`
 - `42_DEVELOPER_START_HERE.md`
+- `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
+
+## Configuration
+- `configs/line_static.toml` — canonical LINE static export profile
+- TOML is the canonical human-maintained configuration format
+- JSON is used for machine-generated manifests/evidence where appropriate
 
 ## History
 - `CHANGELOG.md`
@@ -81,4 +89,6 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - If it is not captured in approved SSOT, it is not yet project truth.
 - Prefer REVIEW over destructive guessing.
 - Preserve original source and artwork safety over automation rate.
-- Python is the orchestration/control plane; providers remain replaceable behind stable contracts.
+- Python is the orchestration/control plane.
+- Depend on provider interfaces, not concrete engines.
+- TOML is the canonical configuration format.
