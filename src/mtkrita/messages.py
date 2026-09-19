@@ -6,7 +6,6 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-
 MESSAGE_SCHEMA_VERSION = 1
 
 
