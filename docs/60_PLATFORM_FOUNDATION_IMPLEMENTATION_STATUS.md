@@ -1,10 +1,10 @@
 # MTKrita Platform Foundation Implementation Status
 
 ## Status
-SSOT — Platform Foundation Implementation Track v2.7
+SSOT — Platform Foundation Implementation Track v2.8
 
 ## Purpose
-Track implementation of PathManager/MainBoard/ResourceBroker/multi-worker/control-plane architecture separately from image-algorithm maturity while reflecting the verified integration that now exists on PR #11.
+Track implementation of the PathManager/MainBoard/ResourceBroker/multi-worker/control-plane architecture separately from image-algorithm maturity while reflecting the verified integration now maintained on PR #11.
 
 ## Current Tracks
 - PR #10 / `feat/platform-control-foundation` — platform/control-plane foundation
@@ -15,10 +15,10 @@ Track implementation of PathManager/MainBoard/ResourceBroker/multi-worker/contro
 ### Durable authority and resources
 - typed `PathRef` and centralized `PathManager`;
 - immutable staged job INPUT namespace;
-- ResourceBroker-controlled staging, verification, private scratch and final promotion;
+- `ResourceBroker`-controlled staging, verification, private scratch and final promotion;
 - source preservation, overwrite refusal, SHA-256 and byte-size evidence;
-- SQLite JobStore v3 with explicit migrations;
-- durable job/task state, generation, attempt, worker identity, leases and stale-write CAS protection;
+- SQLite `JobStore` v3 with explicit migrations;
+- durable job/task state, generation, attempt, worker identity, leases and stale-write protection;
 - durable versioned task descriptors and scheduler priority.
 
 ### Lifecycle, recovery and commitment
@@ -30,19 +30,19 @@ Track implementation of PathManager/MainBoard/ResourceBroker/multi-worker/contro
 
 ### MainBoard / observability
 - MainBoard composition root with specialized services rather than a God Object;
-- versioned MessageEnvelope + EventBus;
+- versioned `MessageEnvelope` + EventBus;
 - centralized JSONL LogSink;
 - job-scoped diagnostic bundle baseline with secret redaction and no source/private image bytes by default.
 
 ### Scheduler / workers
 - bounded fair scheduler with queue/inflight limits, priority and anti-starvation;
-- DispatchCoordinator with compensation on runtime assignment failure;
-- WorkerLossCoordinator and heartbeat/watchdog;
+- `DispatchCoordinator` with compensation on runtime assignment failure;
+- `WorkerLossCoordinator` and heartbeat/watchdog;
 - durable scheduler reconstruction from eligible task descriptors only;
 - Windows `spawn` process adapter behind replaceable worker interfaces;
 - separate command/event channels;
 - versioned UTF-8 JSON IPC; authoritative pickle/domain-object IPC prohibited;
-- WorkerEventRouter and WorkerRuntimeController;
+- `WorkerEventRouter` and `WorkerRuntimeController`;
 - real Windows child-process lifecycle/heartbeat/graceful-stop CI coverage.
 
 ### ExecuteTask / result authority
@@ -51,42 +51,44 @@ Track implementation of PathManager/MainBoard/ResourceBroker/multi-worker/contro
 - ExecuteTask v2 with verified `inputs[]` and private scratch;
 - no worker-selected final target;
 - strict candidate payload validation;
-- CandidateResultCoordinator verifies exact durable RUNNING job/task/worker/attempt/lease;
+- `CandidateResultCoordinator` verifies exact durable RUNNING job/task/worker/attempt/lease;
 - successful candidate passes ResourceBroker verification and ADR-024 before durable SUCCEEDED;
 - REVIEW/FAILED remain control-plane transitions;
 - stale/malformed/hash-mismatch/size-mismatch/cross-job/multi-artifact candidates cannot create durable success.
 
 ## Verified M2 Integration on PR #11
-The previous platform-only gap has been closed on the stacked integration branch:
-
-- strict `M2FrameTaskDescriptor` schema is implemented;
-- MainBoard-owned `M2FrameTargetResolver` resolves final output;
-- `M2FrameTaskExecutor` adapts the headless image pipeline behind injected seams;
-- static built-in `m2.frame` registration is code-owned; task payload cannot choose a module/callable/import path;
-- worker independently verifies staged input integrity;
-- PASS/AUTO_FIXED produces exactly one provisional scratch PNG candidate;
-- REVIEW produces no false success artifact;
-- FAIL maps to structured task failure;
+The platform-only integration gap has been closed on the stacked branch:
+- strict `M2FrameTaskDescriptor` schema;
+- MainBoard-owned `M2FrameTargetResolver`;
+- `M2FrameTaskExecutor` adapting the headless image pipeline behind injected seams;
+- static built-in `m2.frame` registration; task payload cannot choose module/callable/import path;
+- independent staged-input integrity verification inside worker execution;
+- PASS/AUTO_FIXED → exactly one provisional scratch PNG candidate;
+- REVIEW → no false success artifact;
+- FAIL → structured task failure;
 - source and staged input remain immutable;
-- real Windows spawned-child E2E has verified:
-  staged transparent PNG → durable dispatch/lease → ExecuteTask → child M2 pipeline → candidate → MainBoard validation → ResourceBroker/ADR-024 commit → durable SUCCEEDED → final PNG.
+- real Windows spawned-child E2E verifies staged input → durable dispatch/lease → ExecuteTask → child M2 pipeline → candidate → MainBoard validation → ResourceBroker/ADR-024 commit → durable SUCCEEDED → final PNG.
 
-The real-process E2E proves final output does not exist merely because the worker produced a candidate; final publication remains MainBoard authority.
+Final output is not published merely because a worker produced a candidate; final publication remains MainBoard authority.
 
 ## Current Image-Pipeline Hardening Boundary
-PR #11 now extends beyond basic M2 integration into Tier-B safety hardening:
+PR #11 now contains verified Tier-B-oriented safety mechanisms while keeping policy in the image/domain layer:
 - inset decorative border discovery after transparent padding;
-- localized inner-contact evidence;
+- localized border contact ranges;
 - anchored metadata discrimination;
 - analysis-only border exclusion;
-- JointCleanupPlanner planning baseline;
-- metadata completeness guards;
-- enclosed-visible-hole completion for dark numeral/detail pixels inside a selected badge.
+- safe fragment association for one approved raw metadata topology group;
+- exact exclusion-mask identity binding to border evidence;
+- enclosed-visible-hole completion for dark numeral/detail pixels;
+- exclusion-aware confidence evidence without expanding deletion scope;
+- `JointCleanupPlanner` SAFE_PLAN/REVIEW contract;
+- transparent-source joint cleanup integrated in `FramePipeline` only for SAFE_PLAN;
+- opaque-source cleanup remains plan-only pending M3.
 
-These are image-domain capabilities and remain outside platform-worker policy code.
+These capabilities do not grant platform workers independent business authority; workers still compute candidates only.
 
 ## CI / Verification Evidence
-Windows CI checkpoints have passed Ruff + pytest for:
+Windows CI has passed Ruff + pytest for:
 - platform lifecycle/recovery;
 - durable artifact commit/crash reconciliation;
 - logging/diagnostics/scheduler/WorkerManager/dispatch/watchdog;
@@ -98,8 +100,15 @@ Windows CI checkpoints have passed Ruff + pytest for:
 - CandidateResultCoordinator rejection/authority cases;
 - component authority E2E;
 - real-process successful M2 E2E;
-- imported M2 regression suite;
-- Tier-B inset-border/contact/metadata hardening checkpoints through the current integration line.
+- M2 regression suite including joint border/metadata safety.
+
+Toolchain modernization at commit `b23c9c6a6601bbbd0df0acc73976a723e943bfd0` is verified by Windows CI #320:
+- `actions/checkout@v7` PASS;
+- `actions/setup-python@v7` PASS;
+- Ruff PASS;
+- pytest PASS;
+- workflow token scope explicitly limited to `contents: read`;
+- known Pillow `Image.fromarray(..., mode=...)` deprecation warnings removed from joint cleanup.
 
 ## Platform Known Gaps / Remaining Work
 1. packaged/frozen Windows executable `spawn` behavior still needs distribution-gate smoke testing;
@@ -109,7 +118,7 @@ Windows CI checkpoints have passed Ruff + pytest for:
 5. worker start-failure hard-termination/escalation policy can be tightened before RC;
 6. release signing/installer/release automation remains a later distribution milestone.
 
-These platform gaps do not invalidate the verified source-runtime M2 integration, but they block production release readiness.
+These gaps block production release readiness but do not invalidate the verified source-runtime M2 integration.
 
 ## Separation of Responsibilities
 - UI is a replaceable presentation shell and never owns critical business rules.
@@ -119,10 +128,11 @@ These platform gaps do not invalidate the verified source-runtime M2 integration
 - `REVIEW > destructive guess` remains mandatory.
 
 ## Immediate Next Work
-1. complete Tier-B metadata fragment-association/joint-cleanup safety on PR #11;
-2. close M2 Tier-B acceptance with representative corpus evidence;
-3. begin M3 opaque-background implementation;
-4. later return to production schema freeze, packaged-runtime smoke and release hardening.
+1. execute owner-approved Tier-B representative transparent corpus validation on the current PR #11 head;
+2. record per-frame evidence without committing private/source bytes;
+3. close M2 acceptance only after Tier-B approval;
+4. begin M3 opaque-background implementation;
+5. later return to production schema freeze, packaged-runtime smoke and release hardening.
 
 ## References
 - `31_STATE_MACHINE_SPEC.md`
