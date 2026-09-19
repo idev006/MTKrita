@@ -40,24 +40,31 @@ def _distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
 
 
 def _dominant_color(
-    pixels: list[tuple[int, int, int]], tolerance: int
+    samples: list[tuple[int, int, int] | None], tolerance: int
 ) -> tuple[tuple[int, int, int], float]:
-    if not pixels:
+    visible = [sample for sample in samples if sample is not None]
+    if not visible:
         return (0, 0, 0), 0.0
+
     buckets: dict[tuple[int, int, int], int] = {}
     quant = max(1, tolerance + 1)
-    for pixel in pixels:
+    for pixel in visible:
         key = tuple((channel // quant) * quant for channel in pixel)
         buckets[key] = buckets.get(key, 0) + 1
+
     seed = max(buckets, key=buckets.get)
-    matching = [pixel for pixel in pixels if _distance(seed, pixel) <= tolerance]
+    matching = [pixel for pixel in visible if _distance(seed, pixel) <= tolerance]
     if not matching:
         return seed, 0.0
+
     color = tuple(round(sum(pixel[i] for pixel in matching) / len(matching)) for i in range(3))
-    return color, len(matching) / len(pixels)
+    coverage = len(matching) / len(samples)
+    return color, coverage
 
 
-def _strip_pixels(image: Image.Image, side: str, offset: int) -> list[tuple[int, int, int]]:
+def _strip_samples(
+    image: Image.Image, side: str, offset: int
+) -> list[tuple[int, int, int] | None]:
     rgba = image.convert("RGBA")
     px = rgba.load()
     coords: list[tuple[int, int]]
@@ -71,7 +78,15 @@ def _strip_pixels(image: Image.Image, side: str, offset: int) -> list[tuple[int,
     else:
         x = rgba.width - 1 - offset
         coords = [(x, y) for y in range(rgba.height)]
-    return [(px[x, y][0], px[x, y][1], px[x, y][2]) for x, y in coords if px[x, y][3] > 8]
+
+    samples: list[tuple[int, int, int] | None] = []
+    for x, y in coords:
+        pixel = px[x, y]
+        if pixel[3] <= 8:
+            samples.append(None)
+        else:
+            samples.append((pixel[0], pixel[1], pixel[2]))
+    return samples
 
 
 def _detect_side(
@@ -82,9 +97,7 @@ def _detect_side(
     color_tolerance: int,
     min_coverage: float,
 ) -> BorderSide | None:
-    outer = _strip_pixels(image, side, 0)
-    if not outer:
-        return None
+    outer = _strip_samples(image, side, 0)
     outer_color, outer_coverage = _dominant_color(outer, color_tolerance)
     if outer_coverage < min_coverage:
         return None
@@ -92,9 +105,7 @@ def _detect_side(
     coverages: list[float] = []
     thickness = 0
     for offset in range(max_thickness):
-        strip = _strip_pixels(image, side, offset)
-        if not strip:
-            break
+        strip = _strip_samples(image, side, offset)
         color, coverage = _dominant_color(strip, color_tolerance)
         if coverage < min_coverage or _distance(color, outer_color) > color_tolerance:
             break
