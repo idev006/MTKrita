@@ -65,6 +65,8 @@ def _border_evidence(detection: BorderDetection) -> dict[str, object]:
             "thickness": side.thickness,
             "color": side.color,
             "confidence": side.confidence,
+            "visible_support": side.visible_support,
+            "color_purity": side.color_purity,
             "contact_risk": side.contact_risk,
             "contact_fraction": side.contact_fraction,
             "contact_ranges": side.contact_ranges,
@@ -102,6 +104,7 @@ def _metadata_evidence(detection: MetadataDetection) -> dict[str, object]:
         "metadata_fragment_association_applied": detection.fragment_association_applied,
         "metadata_fragment_association_resolved": detection.fragment_association_resolved,
         "metadata_associated_fragment_count": detection.associated_fragment_count,
+        "metadata_ignored_remote_fragment_count": detection.ignored_remote_fragment_count,
         "metadata_requires_joint_cleanup": detection.requires_joint_cleanup,
         "metadata_enclosed_visible_hole_pixel_count": (
             detection.enclosed_visible_hole_pixel_count
@@ -209,7 +212,6 @@ def process_frame(
                 )
 
             if border.contact_risk:
-                # ADR-023: capture immutable source routing before joint cleanup can alter alpha.
                 source_decision = decide_source_background_route(working)
                 evidence.update(_route_evidence(source_decision))
                 if not cfg.remove_metadata:
@@ -284,7 +286,6 @@ def process_frame(
                 actions.append("REMOVE_BORDER")
 
     if source_decision is None:
-        # ADR-023: capture source routing before metadata cleanup can create alpha.
         source_decision = decide_source_background_route(working)
         evidence.update(_route_evidence(source_decision))
 
@@ -308,7 +309,6 @@ def process_frame(
                 )
                 actions.append("REMOVE_FRAME_METADATA")
             else:
-                # Opaque route preserves the mask as evidence for future M3 composition.
                 actions.append("PLAN_FRAME_METADATA")
         elif "ambiguous" in metadata.reason.lower():
             findings.append(

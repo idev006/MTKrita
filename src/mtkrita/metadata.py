@@ -15,6 +15,8 @@ class MetadataZone:
     y_fraction: float = 0.25
     anchor_x_fraction: float = 0.60
     anchor_y_fraction: float = 0.60
+    local_x_fraction: float = 0.90
+    local_y_fraction: float = 0.90
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,7 @@ class MetadataDetection:
     fragment_association_applied: bool = False
     fragment_association_resolved: bool = False
     associated_fragment_count: int = 0
+    ignored_remote_fragment_count: int = 0
     requires_joint_cleanup: bool = False
     enclosed_visible_hole_pixel_count: int = 0
     coordinate_space: str = "pre_cleanup_frame"
@@ -55,6 +58,7 @@ class _MetadataCandidate:
     anchor_distance: float
     anchored: bool
     fragment_count: int = 1
+    ignored_remote_fragment_count: int = 0
     requires_joint_cleanup: bool = False
     association_resolved: bool = False
     analysis_shape_overlap_pixel_count: int = 0
@@ -63,8 +67,16 @@ class _MetadataCandidate:
 def _validate_zone(zone: MetadataZone) -> None:
     if not 0 < zone.x_fraction <= 0.5 or not 0 < zone.y_fraction <= 0.5:
         raise ValueError("metadata zone fractions must be in (0, 0.5]")
-    if not 0 < zone.anchor_x_fraction <= 1 or not 0 < zone.anchor_y_fraction <= 1:
-        raise ValueError("metadata anchor fractions must be in (0, 1]")
+    for value in (
+        zone.anchor_x_fraction,
+        zone.anchor_y_fraction,
+        zone.local_x_fraction,
+        zone.local_y_fraction,
+    ):
+        if not 0 < value <= 1:
+            raise ValueError("metadata anchor/local fractions must be in (0, 1]")
+    if zone.anchor_x_fraction > zone.local_x_fraction or zone.anchor_y_fraction > zone.local_y_fraction:
+        raise ValueError("metadata local envelope must contain the anchor envelope")
 
 
 def _background_rgb(rgba: np.ndarray) -> np.ndarray:
@@ -120,6 +132,7 @@ def _candidate_from_mask(
     anchor_width: float,
     anchor_height: float,
     fragment_count: int = 1,
+    ignored_remote_fragment_count: int = 0,
     requires_joint_cleanup: bool = False,
     association_resolved: bool = False,
     analysis_overlap: np.ndarray | None = None,
@@ -161,10 +174,20 @@ def _candidate_from_mask(
         anchor_distance=float(anchor_distance),
         anchored=anchored,
         fragment_count=fragment_count,
+        ignored_remote_fragment_count=ignored_remote_fragment_count,
         requires_joint_cleanup=requires_joint_cleanup,
         association_resolved=association_resolved,
         analysis_shape_overlap_pixel_count=overlap_count,
     )
+
+
+def _inside_local_envelope(
+    candidate: _MetadataCandidate,
+    local_width: float,
+    local_height: float,
+) -> bool:
+    _, _, x1, y1 = candidate.bbox
+    return x1 <= local_width and y1 <= local_height
 
 
 def _group_candidates_by_raw_topology(
@@ -176,15 +199,20 @@ def _group_candidates_by_raw_topology(
     zone_height: int,
     anchor_width: float,
     anchor_height: float,
+    local_width: float,
+    local_height: float,
+    association_gap: int = 2,
 ) -> tuple[list[_MetadataCandidate], bool]:
     raw_count, raw_labels = cv2.connectedComponents(raw_candidate, connectivity=8)
-    exclusion_boundary = cv2.dilate(
-        zone_exclusion.astype(np.uint8),
-        np.ones((3, 3), dtype=np.uint8),
-        iterations=1,
-    ).astype(bool)
     candidates: list[_MetadataCandidate] = []
     unresolved_association = False
+
+    if np.any(zone_exclusion):
+        distance_to_exclusion = cv2.distanceTransform(
+            (~zone_exclusion).astype(np.uint8), cv2.DIST_C, 3
+        )
+    else:
+        distance_to_exclusion = np.full(candidate_mask.shape, 999.0, dtype=np.float32)
 
     for raw_label in range(1, raw_count):
         raw_group = raw_labels == raw_label
@@ -193,55 +221,73 @@ def _group_candidates_by_raw_topology(
             continue
 
         excluded_from_group = bool(np.any(raw_group & zone_exclusion))
+        if not excluded_from_group:
+            candidate = _candidate_from_mask(
+                group_mask,
+                zone_width=zone_width,
+                zone_height=zone_height,
+                anchor_width=anchor_width,
+                anchor_height=anchor_height,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+            continue
+
         fragment_count, fragment_labels = cv2.connectedComponents(
             group_mask.astype(np.uint8), connectivity=8
         )
-        fragment_total = fragment_count - 1
+        selected_fragments: list[np.ndarray] = []
+        independent_fragments: list[_MetadataCandidate] = []
+        remote_count = 0
 
-        if excluded_from_group:
-            fragment_checks: list[bool] = []
-            for fragment_label in range(1, fragment_count):
-                fragment = fragment_labels == fragment_label
-                fragment_candidate = _candidate_from_mask(
-                    fragment,
-                    zone_width=zone_width,
-                    zone_height=zone_height,
-                    anchor_width=anchor_width,
-                    anchor_height=anchor_height,
-                )
-                fragment_checks.append(
-                    fragment_candidate is not None
-                    and fragment_candidate.anchored
-                    and bool(np.any(fragment & exclusion_boundary))
-                )
-            if not fragment_checks or not all(fragment_checks):
-                if any(
-                    _candidate_from_mask(
-                        fragment_labels == fragment_label,
-                        zone_width=zone_width,
-                        zone_height=zone_height,
-                        anchor_width=anchor_width,
-                        anchor_height=anchor_height,
-                    )
-                    is not None
-                    for fragment_label in range(1, fragment_count)
-                ):
-                    unresolved_association = True
+        for fragment_label in range(1, fragment_count):
+            fragment = fragment_labels == fragment_label
+            fragment_candidate = _candidate_from_mask(
+                fragment,
+                zone_width=zone_width,
+                zone_height=zone_height,
+                anchor_width=anchor_width,
+                anchor_height=anchor_height,
+            )
+            if fragment_candidate is None:
                 continue
 
-        candidate = _candidate_from_mask(
-            group_mask,
-            zone_width=zone_width,
-            zone_height=zone_height,
-            anchor_width=anchor_width,
-            anchor_height=anchor_height,
-            fragment_count=max(1, fragment_total),
-            requires_joint_cleanup=excluded_from_group,
-            association_resolved=excluded_from_group,
-            analysis_overlap=(raw_group & zone_exclusion) if excluded_from_group else None,
-        )
-        if candidate is not None:
-            candidates.append(candidate)
+            local = _inside_local_envelope(fragment_candidate, local_width, local_height)
+            distance = float(np.min(distance_to_exclusion[fragment]))
+            adjacent = distance <= association_gap
+
+            if fragment_candidate.anchored and adjacent:
+                if not local:
+                    unresolved_association = True
+                    continue
+                selected_fragments.append(fragment)
+                continue
+
+            remote_count += 1
+            independent_fragments.append(fragment_candidate)
+
+        if selected_fragments:
+            selected_union = np.logical_or.reduce(selected_fragments)
+            candidate = _candidate_from_mask(
+                selected_union,
+                zone_width=zone_width,
+                zone_height=zone_height,
+                anchor_width=anchor_width,
+                anchor_height=anchor_height,
+                fragment_count=len(selected_fragments),
+                ignored_remote_fragment_count=remote_count,
+                requires_joint_cleanup=True,
+                association_resolved=True,
+                analysis_overlap=raw_group & zone_exclusion,
+            )
+            if candidate is not None and _inside_local_envelope(
+                candidate, local_width, local_height
+            ):
+                candidates.append(candidate)
+            else:
+                unresolved_association = True
+
+        candidates.extend(independent_fragments)
 
     return candidates, unresolved_association
 
@@ -250,7 +296,6 @@ def _complete_enclosed_visible_holes(
     selected_mask: np.ndarray,
     alpha: np.ndarray,
 ) -> tuple[np.ndarray, int]:
-    """Add only visible holes fully enclosed by the approved candidate topology."""
     mask = selected_mask.astype(bool, copy=True)
     ys, xs = np.nonzero(mask)
     if xs.size == 0:
@@ -313,6 +358,8 @@ def detect_corner_metadata(
     zone_height = max(1, round(height * resolved_zone.y_fraction))
     anchor_width = max(1.0, zone_width * resolved_zone.anchor_x_fraction)
     anchor_height = max(1.0, zone_height * resolved_zone.anchor_y_fraction)
+    local_width = max(anchor_width, zone_width * resolved_zone.local_x_fraction)
+    local_height = max(anchor_height, zone_height * resolved_zone.local_y_fraction)
 
     rgb = rgba[:, :, :3].astype(np.int16)
     alpha = rgba[:, :, 3]
@@ -337,13 +384,15 @@ def detect_corner_metadata(
         zone_height=zone_height,
         anchor_width=anchor_width,
         anchor_height=anchor_height,
+        local_width=local_width,
+        local_height=local_height,
     )
     if unresolved_association:
         return MetadataDetection(
             None,
             0.0,
             None,
-            "analysis exclusion produced an unresolved raw-topology association",
+            "analysis exclusion produced an unresolved local-isolation association",
             candidate_count=len(candidates),
             fragment_association_applied=True,
             fragment_association_resolved=False,
@@ -362,6 +411,7 @@ def detect_corner_metadata(
         candidate
         for candidate in candidates
         if candidate.anchored
+        and _inside_local_envelope(candidate, local_width, local_height)
         and min_area_ratio <= candidate.area_ratio <= max_area_ratio
         and candidate.fill_ratio >= min_fill_ratio
         and candidate.compactness >= min_compactness
@@ -371,7 +421,7 @@ def detect_corner_metadata(
             None,
             max(candidate.confidence for candidate in candidates),
             None,
-            "no anchored metadata candidate passed shape constraints",
+            "no anchored metadata candidate passed local shape constraints",
             candidate_count=len(candidates),
             anchored_candidate_count=0,
             **exclusion_evidence,
@@ -394,6 +444,7 @@ def detect_corner_metadata(
             anchor_distance=best.anchor_distance,
             dominance_margin=float(margin),
             analysis_shape_overlap_pixel_count=best.analysis_shape_overlap_pixel_count,
+            ignored_remote_fragment_count=best.ignored_remote_fragment_count,
             **exclusion_evidence,
         )
 
@@ -403,7 +454,9 @@ def detect_corner_metadata(
 
     reason = "single dominant anchored top-left metadata candidate"
     if best.requires_joint_cleanup:
-        reason += "; exclusion-fragment association resolved for joint cleanup"
+        reason += "; post-exclusion local isolation resolved for joint cleanup"
+    if best.ignored_remote_fragment_count:
+        reason += "; remote fragments preserved outside local destructive ownership"
     if best.analysis_shape_overlap_pixel_count:
         reason += "; approved exclusion overlap used for shape confidence only"
     if enclosed_count:
@@ -426,6 +479,7 @@ def detect_corner_metadata(
         fragment_association_applied=best.requires_joint_cleanup,
         fragment_association_resolved=best.association_resolved,
         associated_fragment_count=best.fragment_count,
+        ignored_remote_fragment_count=best.ignored_remote_fragment_count,
         requires_joint_cleanup=best.requires_joint_cleanup,
         enclosed_visible_hole_pixel_count=enclosed_count,
         **exclusion_evidence,
