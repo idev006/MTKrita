@@ -16,6 +16,7 @@ from .path_manager import PathManager
 from .recovery import StartupReconciler, StartupRecoveryCoordinator
 from .resource_broker import ResourceBroker
 from .task_leases import TaskLeaseRegistry
+from .worker_manager import WorkerManager
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class MainBoard:
     logs: JsonlLogSink
     diagnostics: DiagnosticBundleBuilder
     leases: TaskLeaseRegistry
+    workers: WorkerManager
     lifecycle: JobLifecycleController
     recovery: StartupReconciler
     artifact_journal: ArtifactCommitJournal
@@ -45,6 +47,7 @@ class MainBoard:
         events: InProcessEventBus | None = None,
         leases: TaskLeaseRegistry | None = None,
         logs: JsonlLogSink | None = None,
+        workers: WorkerManager | None = None,
     ) -> MainBoard:
         resources = ResourceBroker(paths)
         artifact_journal = ArtifactCommitJournal(jobs)
@@ -62,6 +65,7 @@ class MainBoard:
             logs=log_sink,
             diagnostics=DiagnosticBundleBuilder(paths, jobs),
             leases=leases or TaskLeaseRegistry(),
+            workers=workers or WorkerManager(),
             lifecycle=JobLifecycleController(jobs),
             recovery=recovery,
             artifact_journal=artifact_journal,
