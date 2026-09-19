@@ -77,7 +77,7 @@ def build_border_cleanup_mask(
         selected = region & (alpha > 8) & near_border_color
         mask[selected] = 255
 
-    return Image.fromarray(mask, mode="L")
+    return Image.fromarray(mask)
 
 
 def _mask_sha256(mask: Image.Image) -> str:
@@ -273,7 +273,7 @@ def plan_joint_cleanup(
             reasons=("planned cleanup exceeds maximum removal ratio",),
         )
 
-    combined_mask = Image.fromarray(combined, mode="L")
+    combined_mask = Image.fromarray(combined)
     digest = sha256(combined.tobytes()).hexdigest()
     return JointCleanupPlan(
         status=JointCleanupStatus.SAFE_PLAN,
@@ -300,5 +300,5 @@ def apply_joint_cleanup(image: Image.Image, plan: JointCleanupPlan) -> Image.Ima
     alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8).copy()
     mask = np.asarray(plan.combined_mask, dtype=np.uint8)
     alpha[mask > 0] = 0
-    rgba.putalpha(Image.fromarray(alpha, mode="L"))
+    rgba.putalpha(Image.fromarray(alpha))
     return rgba
