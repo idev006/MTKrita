@@ -12,7 +12,7 @@ def test_path_manager_builds_isolated_job_and_worker_paths(tmp_path: Path) -> No
     assert job.path.is_dir()
     assert worker.kind == PathKind.WORKER_SCRATCH
     assert worker.path.is_dir()
-    assert worker.path.parent.parent == job.path / "scratch"
+    assert worker.path.parent == job.path / "scratch"
 
 
 def test_output_evidence_and_log_resolve_inside_job(tmp_path: Path) -> None:
