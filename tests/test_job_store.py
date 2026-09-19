@@ -74,7 +74,7 @@ def test_job_store_requires_prepared_parent(tmp_path: Path) -> None:
         raise AssertionError("expected unprepared parent rejection")
 
 
-def test_job_store_migrates_v1_to_v2_without_losing_jobs(tmp_path: Path) -> None:
+def test_job_store_migrates_v1_to_v3_without_losing_jobs(tmp_path: Path) -> None:
     path = tmp_path / "jobs.sqlite3"
     connection = sqlite3.connect(path)
     connection.executescript(
@@ -117,9 +117,105 @@ def test_job_store_migrates_v1_to_v2_without_losing_jobs(tmp_path: Path) -> None
     task_table = migrated.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tasks'"
     ).fetchone()
+    descriptor_table = migrated.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_descriptors'"
+    ).fetchone()
     migrated.close()
-    assert version == ("2",)
+    assert version == ("3",)
     assert task_table == ("tasks",)
+    assert descriptor_table == ("task_descriptors",)
+
+
+def test_v2_task_migration_is_explicitly_not_reconstructable(tmp_path: Path) -> None:
+    path = tmp_path / "jobs.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        """
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata(key, value) VALUES('schema_version', '2');
+        CREATE TABLE jobs (
+            job_id TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            source_hash TEXT,
+            config_hash TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE events (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            event_code TEXT NOT NULL,
+            from_state TEXT,
+            to_state TEXT,
+            generation INTEGER NOT NULL,
+            occurred_at TEXT NOT NULL,
+            detail_json TEXT NOT NULL
+        );
+        CREATE TABLE tasks (
+            task_id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL,
+            state TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            attempt INTEGER NOT NULL,
+            worker_id TEXT,
+            lease_expires_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO jobs VALUES('job-1', 'READY', 0, NULL, NULL, 't0', 't0');
+        INSERT INTO tasks VALUES('legacy-task', 'job-1', 'PENDING', 0, 0, NULL, NULL, 't0', 't0');
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    store = JobStore(path)
+    store.initialize()
+
+    descriptor = store.get_task_descriptor("legacy-task")
+    assert descriptor.priority == 20
+    assert descriptor.descriptor_version == 0
+    assert descriptor.descriptor == {}
+    assert descriptor.reconstructable is False
+    assert store.list_reconstructable_tasks("job-1") == ()
+
+
+def test_new_task_descriptor_priority_and_payload_persist_across_reopen(tmp_path: Path) -> None:
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path)
+    store.initialize()
+    store.create_job("job-1")
+    store.create_task(
+        "task-01",
+        job_id="job-1",
+        priority=10,
+        descriptor={"frame_id": 1, "stage_plan": "frame-v1"},
+        descriptor_version=1,
+    )
+
+    reopened = JobStore(path)
+    reopened.initialize()
+    descriptor = reopened.get_task_descriptor("task-01")
+    assert descriptor.priority == 10
+    assert descriptor.descriptor_version == 1
+    assert descriptor.descriptor == {"frame_id": 1, "stage_plan": "frame-v1"}
+    assert descriptor.reconstructable is True
+    reconstructable = reopened.list_reconstructable_tasks("job-1")
+    assert len(reconstructable) == 1
+    assert reconstructable[0][0].task_id == "task-01"
+    assert reconstructable[0][1] == descriptor
+
+
+def test_task_without_descriptor_remains_non_reconstructable(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.initialize()
+    store.create_job("job-1")
+    store.create_task("task-01", job_id="job-1")
+
+    descriptor = store.get_task_descriptor("task-01")
+    assert descriptor.reconstructable is False
+    assert store.list_reconstructable_tasks("job-1") == ()
 
 
 def test_task_attempt_and_lease_state_persist_across_reopen(tmp_path: Path) -> None:
