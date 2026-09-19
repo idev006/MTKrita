@@ -9,6 +9,7 @@ import pytest
 from mtkrita.artifact_commit import ArtifactCommitCoordinator, ArtifactCommitJournal
 from mtkrita.dispatch import DispatchCoordinator
 from mtkrita.job_store import JobStore, TaskDescriptorRecord, TaskRecord
+from mtkrita.messages import MessageEnvelope
 from mtkrita.path_manager import PathManager, PathRef
 from mtkrita.resource_broker import ResourceBroker
 from mtkrita.scheduler import BoundedFairScheduler, ScheduledTask
@@ -64,7 +65,7 @@ class Harness:
     scheduler: BoundedFairScheduler
     resolver: FixedTargetResolver
     coordinator: CandidateResultCoordinator
-    command: object
+    command: MessageEnvelope
 
 
 def _harness(tmp_path: Path, *, attempt_seed: int = 0) -> Harness:
@@ -185,7 +186,7 @@ def test_success_candidate_hash_mismatch_leaves_task_running(tmp_path: Path) -> 
         causation=harness.command,
     )
 
-    with pytest.raises(ValueError, match="hash mismatch"):
+    with pytest.raises(CandidateResultError, match="hash mismatch"):
         harness.coordinator.accept(event)
 
     assert harness.jobs.get_task("task-1").state == "RUNNING"
