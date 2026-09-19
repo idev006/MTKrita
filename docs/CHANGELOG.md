@@ -1,5 +1,55 @@
 # Documentation Changelog
 
+## v0.9 — 2026-09-19
+- Accepted ADR-027: workers consume only control-plane-staged immutable inputs; raw external/user filesystem paths never become worker execution authority.
+- Added `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md` defining immutable job INPUT staging, strict M2 frame descriptors, worker scratch-only output, and MainBoard final publication.
+- Extended PathManager with typed `INPUT` references and job `inputs/` namespace.
+- Extended ResourceBroker with immutable input staging and verification using source-preserving copy, flush/fsync, SHA-256, byte size, overwrite refusal and atomic promotion.
+- Upgraded ExecuteTask payload to version 2 with explicit verified `inputs[]`; durable descriptors contain logical input identity/hash instead of external absolute paths.
+- Added strict `M2FrameTaskDescriptor` schema and `M2FrameTargetResolver`; unknown/path-like critical fields, invalid geometry/config/hash and non-PNG output names are rejected.
+- Added injectable `M2FrameTaskExecutor` adapter that verifies staged input, maps M2 PASS/AUTO_FIXED/REVIEW/FAIL to candidate outcomes and writes success PNG only to worker-private scratch.
+- Kept M2 image algorithms outside platform code; PR #9 remains the source of `process_frame`, `FramePipelineConfig` and PNG export implementation.
+- Added regression coverage for source preservation, input overwrite/hash/size failures, strict descriptor validation, trusted target resolution, tampered-input rejection and executor status mapping.
+- Windows CI checkpoint covering immutable input, ExecuteTask v2, strict M2 descriptor/target resolver and M2 executor adapter passed Ruff + pytest.
+- Updated path/resource architecture to v1.2, worker IPC spec to v1.3, task/result spec to v1.1 and platform status to v2.6.
+
+## v0.8 — 2026-09-19
+- Accepted ADR-026: `ExecuteTask` is immutable and worker results remain candidates until durable control-plane acceptance.
+- Added `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md` defining exact candidate validation order, one-primary-artifact MVP cardinality, MainBoard-owned target resolution and ADR-024 success commitment.
+- Implemented Windows spawn worker process/session adapter, validated worker-event routing and WorkerRuntimeController.
+- Added real Windows CI smoke coverage for spawn, ready, heartbeat, graceful stop/process exit and ExecuteTask transport.
+- Added strict ExecuteTask command builder/parser, TaskExecutor interface and versioned candidate-result schema.
+- Added `CandidateResultCoordinator` enforcing durable RUNNING worker/attempt authority, active lease, BUSY ownership, provisional hash/size validation and trusted final target resolution.
+- Successful candidates now reach durable SUCCEEDED only through the existing ADR-024 artifact commit protocol; REVIEW/FAILED transition durably before runtime ownership release.
+- Explicitly restricted current success contract to exactly one primary artifact per task; multi-artifact atomic/group commit requires a separate design decision.
+- Added regression tests for stale attempts, wrong authority, hash/size mismatch, cross-job target, zero/multiple artifacts and runtime ownership release.
+- Added component end-to-end authority test: dispatch → ExecuteTask → test executor scratch → validated candidate → ADR-024 commit → durable success.
+- Updated Windows worker IPC spec to v1.2, platform status to v2.5 and documentation index to include task/result authority SSOT.
+- Current code checkpoint passed Ruff + pytest on Windows CI; packaged/frozen spawn and concrete M2 image executor integration remain future gates.
+
+## v0.7 — 2026-09-19
+- Extended platform control-plane implementation with centralized JSONL logging, safe diagnostic bundles, bounded fair scheduling, WorkerManager heartbeat/lifecycle tracking, durable dispatch coordination and worker-loss watchdog recovery.
+- Added ADR-025: scheduler reconstruction must use durable task descriptors rather than runtime-memory guesses.
+- Upgraded JobStore to schema v3 with explicit v1→v2→v3 migration and durable task descriptor/priority metadata.
+- Legacy v2 tasks without execution descriptors are explicitly non-reconstructable instead of receiving invented scheduling meaning.
+- Added `SchedulerReconstructor` and automated tests for restart eligibility, priority preservation, deferred queue capacity and unsupported descriptor rejection.
+- Added `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md` defining Windows spawn isolation, explicit command/event channels and non-pickle authoritative IPC.
+- Added versioned UTF-8 JSON worker IPC codec with schema/type/identity/size validation and automated protocol tests.
+- Updated Platform Foundation Implementation Status to v2.3 and documentation index accordingly.
+- Latest code verification for JobStore v3, scheduler reconstruction and JSON IPC passed Ruff + pytest.
+
+## v0.6 — 2026-09-19
+- Implemented and documented the platform-control foundation track in PR #10.
+- Added PathManager typed resource ownership and ResourceBroker centralized artifact promotion.
+- Added durable SQLite JobStore v2 with compatible v1→v2 migration, task attempts, leases and CAS stale-write protection.
+- Added versioned command/event envelopes, in-process EventBus and MainBoard composition root.
+- Added pause/stop/resume lifecycle control and idempotent startup reconciliation.
+- Extended the state machine with PAUSING, PAUSED, STOPPING, STOPPED and INTERRUPTED semantics.
+- Accepted ADR-024 for durable commit intent across filesystem and JobStore boundaries.
+- Added durable artifact commit journal/coordinator/reconciler and fault-injection tests for crash-after-promotion, missing final files, hash mismatch and superseded attempts.
+- Added ordered startup recovery so valid promoted artifacts are reconciled before orphaned RUNNING tasks are interrupted.
+- Updated Platform Foundation Implementation Status to v1.7.
+
 ## v0.5 — 2026-09-19
 - Finalized architecture principles for PathManager, MainBoard/control plane, ResourceBroker, multi-worker isolation, leases/attempts, centralized shared-state commitment, pause/resume/recovery and observability.
 - Added engineering handoff checklist and reference implementation blueprint.

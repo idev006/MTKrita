@@ -13,6 +13,7 @@ For a new development team, begin with:
 9. `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md` — testability/automation architecture
 10. `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md` — coding/repository rules
 11. `58_SSOT_COVERAGE_AUDIT.md` — documentation readiness audit
+12. `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md` — live control-plane implementation status
 
 ## SSOT Rule
 MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hierarchy defined in `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`.
@@ -52,12 +53,16 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 - `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
 - `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
+- `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
+- `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
+- `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
 - `15_PROCESS_ENGINEERING_SPEC.md`
 - `17_PIPELINE_ENGINEERING_GUIDE.md`
 - `09_DATA_MODELS_AND_CONFIG.md`
+- `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 
 ## Quality / Verification / Traceability
 - `06_QA_RULEBOOK.md`
@@ -85,6 +90,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md`
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
 - `57_TEAM_EXECUTION_PLAYBOOK.md`
+- `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md`
 
 ## Engineering / Handoff / Operations
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
@@ -95,6 +101,10 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `53_OPERATIONAL_RUNBOOK.md`
 - `55_PROJECT_GLOSSARY_AND_NAMING.md`
 - `56_MAINTENANCE_AND_EXTENSION_GUIDE.md`
+- `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md`
+- `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
+- `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
+- `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 
 ## Configuration
 - `configs/line_static.toml` — canonical LINE static export profile
@@ -113,7 +123,13 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - Depend on provider interfaces, not concrete engines.
 - TOML is the canonical configuration format.
 - All critical runtime paths go through PathManager/typed path references.
-- Workers compute in isolation; shared-state commit is centralized through MainBoard/ResourceBroker.
+- External/user-selected files are staged into a control-plane-owned immutable INPUT namespace before worker use; arbitrary source paths never become worker authority.
+- Workers compute only from approved immutable staged input and their private scratch; shared-state commit is centralized through MainBoard/ResourceBroker.
 - Batch and multi-worker execution must remain pauseable, resumable, recoverable and diagnosable.
 - Structured logs, checkpoints and durable state are first-class architecture requirements.
+- Scheduler runtime memory is disposable; restart reconstruction uses durable task descriptors and must not guess legacy task meaning.
+- Worker IPC uses explicit validated schemas; process transport must not leak critical business rules into worker or UI layers.
+- ExecuteTask is immutable; worker results are candidates until durable MainBoard authority accepts them.
+- A worker never selects final output destination or bypasses ADR-024 artifact commitment.
+- M2 image-processing algorithms remain behind the headless pipeline/provider boundary; platform worker code adapts contracts and does not duplicate image policy.
 - Critical code must be designed for headless automated testing with injectable/replaceable dependencies and permanent regression coverage for reproducible defects.

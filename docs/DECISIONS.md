@@ -170,3 +170,91 @@ Required behavior:
 - manifests/tests must record source transparency provenance separately from final alpha state.
 
 This decision prevents alpha introduced by cleanup from being mistaken for transparency that existed in the source artwork.
+
+## ADR-024 — Durable Commit Intent Bridges Filesystem and JobStore
+**Status:** Accepted
+
+A final artifact rename and a SQLite state transaction cannot participate in one native atomic transaction. MTKrita therefore uses a **durable commit-intent protocol** owned by the control plane to make cross-resource completion recoverable and auditable.
+
+Required sequence:
+1. validate the authoritative `task_id`, `worker_id`, `attempt`, generation and candidate hash;
+2. persist a durable artifact-commit intent in JobStore before publishing the final artifact;
+3. atomically promote the validated worker-scratch candidate to its PathManager-resolved final target;
+4. verify the promoted artifact identity/hash;
+5. durably finalize the commit record and the corresponding task/state transition;
+6. publish completion events only after durable finalization.
+
+Crash/restart rules:
+- an intent without a final file remains recoverable/incomplete and must never imply success;
+- an intent with a matching final file may be finalized during reconciliation when task/attempt identity is still valid;
+- a mismatching final file/hash is an integrity error and must not be overwritten silently;
+- stale/superseded attempts may not finalize an intent or claim an existing artifact;
+- reconciliation is idempotent and records its decision in durable evidence.
+
+This protocol is a recovery-oriented substitute for an impossible cross-filesystem/database ACID transaction. Final file existence alone is never sufficient evidence that a task or job succeeded.
+
+## ADR-025 — Scheduler Reconstruction Uses Durable Task Descriptors
+**Status:** Accepted
+
+The in-memory scheduler is disposable runtime state. After application restart, pause/resume, or worker-loss recovery, scheduling decisions shall be rebuilt from a **durable task descriptor** rather than guessed from filenames, completion order, UI state, or hard-coded defaults.
+
+Required durable scheduling metadata includes at minimum:
+- `task_id` and `job_id`;
+- scheduler priority;
+- immutable task descriptor payload sufficient to recreate the dispatch contract;
+- descriptor/schema version;
+- the existing durable task state, generation and attempt identity.
+
+Rules:
+- task descriptors are written by the control plane when the durable task is created;
+- scheduler priority is part of durable task identity/evidence and must survive restart;
+- PENDING and eligible INTERRUPTED tasks may be reconstructed into the scheduler queue;
+- RUNNING tasks are never reconstructed as runnable until startup reconciliation has resolved their prior attempt;
+- SUCCEEDED/FAILED/REVIEW terminal tasks are not rescheduled merely because the process restarted;
+- reconstruction must preserve deterministic ordering for equal-priority work using stable task identity/order metadata;
+- the scheduler remains a replaceable in-memory policy component; JobStore remains the durable authority;
+- schema evolution for durable descriptors requires explicit migration tests and must not silently invent missing critical fields.
+
+This decision enables pause/resume/restart without depending on process memory and prevents recovery from changing task priority or execution meaning.
+
+## ADR-026 — ExecuteTask Is Immutable and Worker Results Are Candidates
+**Status:** Accepted
+
+Cross-process task execution shall use an explicit immutable `ExecuteTask` command contract derived from durable task metadata and MainBoard-approved resource references. A worker result is always a **candidate** until the control plane validates durable identity, lease/attempt authority, file/hash evidence and the applicable QA/artifact-commit policy.
+
+Required command rules:
+- `job_id`, `task_id`, `worker_id` and positive `attempt` are mandatory and must match the durable RUNNING assignment;
+- payload carries a versioned immutable task descriptor snapshot rather than mutable domain objects;
+- worker-private scratch identity is supplied by the control plane and must resolve through PathManager ownership rules;
+- input/resource references must be explicit approved data and must not include arbitrary final-output destinations;
+- no callable, module path, executable expression, pickled object, JobStore handle, UI object or shared mutable service may cross the task command boundary;
+- worker task executor is accessed behind an explicit interface/protocol and returns a structured candidate result.
+
+Required result rules:
+- `TaskStarted`, `TaskSucceededCandidate`, `TaskReviewCandidate` and `TaskFailed` carry the exact assigned `task_id`/`worker_id`/`attempt` identity;
+- success candidates may describe only worker-private provisional artifacts using safe relative names plus cryptographic hash/byte-size evidence; they never name or mutate final destinations;
+- `TaskSucceededCandidate` never directly changes durable task state to SUCCEEDED;
+- MainBoard reconstructs authoritative PathRefs, validates the current durable RUNNING attempt/lease, and invokes the existing ADR-024 artifact-commit protocol before accepting success;
+- stale, malformed, identity-mismatched, hash-mismatched or out-of-policy candidate results are rejected without overwriting authoritative artifacts;
+- REVIEW/FAILED handling remains a control-plane state transition and evidence decision, not worker-owned authority.
+
+This decision prevents the IPC/task-executor layer from becoming a second state machine or bypassing PathManager, ResourceBroker, JobStore, QA and durable artifact commitment.
+
+## ADR-027 — Workers Consume Only Control-Plane-Staged Immutable Inputs
+**Status:** Accepted
+
+External/user-selected filesystem paths shall never become worker execution authority merely because they appear in a task descriptor or UI payload. File inputs required by worker execution are first staged by the control plane into a PathManager-owned immutable job INPUT namespace and bound to cryptographic evidence.
+
+Required behavior:
+- MainBoard/ResourceBroker copies an explicitly selected source into `jobs/<job_id>/inputs/` using a PathManager `INPUT` reference;
+- staging never renames, deletes, overwrites or mutates the original source;
+- staged input is immutable/read-only by policy after successful staging;
+- staging records SHA-256 and byte size and refuses silent overwrite;
+- durable task descriptors carry logical input identity/hash, not arbitrary external absolute paths;
+- `ExecuteTaskCommandBuilder` reconstructs the staged path through `PathManager.input()` and verifies the staged bytes before command creation;
+- ExecuteTask carries only the verified staged input reference/evidence approved by the control plane;
+- workers independently verify staged input identity/integrity before processing where required;
+- workers may write only their private scratch during computation and may not mutate INPUT or final OUTPUT namespaces;
+- final output remains MainBoard-owned and is published only through ResourceBroker/CandidateResultCoordinator and ADR-024.
+
+This decision closes the gap between source immutability and process isolation: the worker receives a reproducible, workspace-owned, hash-bound input rather than a raw path controlled by external/user/task data.

@@ -1,7 +1,7 @@
 # MTKrita Batch and Multi-Worker Execution Model
 
 ## Status
-SSOT — Execution Architecture Baseline v1.0
+SSOT — Execution Architecture Baseline v1.2
 
 ## Purpose
 กำหนดวิธีประมวลผลแบบ batch และ parallel multi-worker ให้มี throughput สูงโดยไม่แลกกับความถูกต้อง ความสามารถในการ recover หรือความปลอดภัยของ shared resources
@@ -66,6 +66,8 @@ correlation_id
 ```
 
 No arbitrary shared path or mutable global object is passed to a worker.
+
+The control plane must also persist the scheduling/execution meaning required to reconstruct a task after restart. See ADR-025.
 
 ## 5. Task Result
 
@@ -191,10 +193,40 @@ Worker 10 may finish before worker 1; export remains `01.png ... 10.png`.
 
 Scheduler requirements:
 - bounded inflight tasks
+- bounded queued tasks
 - per-job fairness when multiple jobs exist
 - priority support
 - resource-aware admission
 - avoid starvation of REVIEW/retry work
+
+### 14.1 Scheduler Foundation Contract
+The MVP scheduler is an admission/dispatch policy component, not the durable authority.
+
+Required behavior:
+- queue capacity and inflight capacity are explicit hard bounds;
+- duplicate task identity is rejected;
+- tasks at the same priority are dispatched round-robin across jobs;
+- a job-dispatchability callback gates PAUSED/STOPPING/otherwise blocked jobs without embedding lifecycle rules inside the scheduler;
+- blocked tasks remain queued and are not silently dropped;
+- priority is supported, but a configurable priority burst limit must allow lower-priority ready work to make progress;
+- task completion releases an inflight slot;
+- durable task assignment, attempt identity, leases and final state remain owned by JobStore/MainBoard services.
+
+The scheduler may be replaced later without changing JobStore, worker-result validation or artifact-commit contracts.
+
+### 14.2 Durable Scheduler Reconstruction
+Scheduler queues are disposable process memory. Recovery reconstructs them from JobStore durable task descriptors.
+
+Required behavior:
+- new reconstructable tasks persist priority, descriptor payload and descriptor schema version in the same durable task-creation transaction;
+- JobStore schema v3 introduces durable task descriptors without changing the existing task-state record contract;
+- legacy v2 tasks receive an explicit non-reconstructable marker during migration rather than invented execution meaning;
+- only PENDING and eligible INTERRUPTED tasks may enter a reconstructed queue;
+- RUNNING tasks must first pass startup reconciliation; terminal/review states are not reconstructed;
+- unsupported descriptor versions or priority values fail before partial enqueue;
+- equal-priority reconstruction uses stable task identity ordering so restart does not introduce completion-time ordering;
+- queue capacity remains authoritative at runtime; tasks that cannot fit are reported as deferred, not discarded;
+- reconstruction changes only disposable scheduler state and never mutates durable task state.
 
 ## 15. Worker Failure Policy
 
@@ -243,3 +275,4 @@ Performance optimization may not bypass safety contracts.
 - `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 - `33_ERROR_RECOVERY_AND_IDEMPOTENCY_SPEC.md`
 - `31_STATE_MACHINE_SPEC.md`
+- ADR-025

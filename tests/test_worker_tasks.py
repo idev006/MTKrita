@@ -1,0 +1,225 @@
+import hashlib
+from pathlib import Path
+
+import pytest
+
+from mtkrita.job_store import JobStore
+from mtkrita.path_manager import PathManager
+from mtkrita.resource_broker import ResourceBroker
+from mtkrita.worker_tasks import (
+    ExecuteTaskCommandBuilder,
+    ProvisionalArtifact,
+    TaskCandidateResult,
+    TaskCandidateStatus,
+    WorkerTaskContractError,
+    candidate_event,
+    parse_candidate_event,
+    parse_execute_task,
+)
+
+
+def _m2_descriptor(*, digest: str) -> dict[str, object]:
+    return {
+        "task_type": "m2.frame",
+        "input_name": "frame-001.png",
+        "input_sha256": digest,
+        "output_name": "01.png",
+        "frame_index": 1,
+        "row": 0,
+        "column": 0,
+        "extraction_rect": [0, 0, 512, 512],
+        "extraction_method": "exact-grid",
+        "extraction_confidence": 1.0,
+        "pipeline_config": {
+            "target_width": 370,
+            "target_height": 320,
+            "margin": 10,
+            "remove_border": True,
+            "remove_metadata": True,
+            "border_auto_threshold": 0.995,
+            "metadata_auto_threshold": 0.72,
+        },
+    }
+
+
+def _assigned_task(tmp_path: Path):
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    jobs = JobStore(paths.evidence("job-1", "jobs.sqlite3").path)
+    jobs.initialize()
+    jobs.create_job("job-1")
+    jobs.create_task(
+        "task-1",
+        job_id="job-1",
+        priority=10,
+        descriptor={"frame_id": 1, "stage_plan": ["inspect", "export"]},
+        descriptor_version=1,
+    )
+    jobs.assign_task(
+        "task-1",
+        expected_generation=0,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+    return paths, jobs
+
+
+def test_execute_task_builder_uses_durable_assignment_and_path_manager(tmp_path: Path) -> None:
+    paths, jobs = _assigned_task(tmp_path)
+
+    command = ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1")
+    request = parse_execute_task(command)
+
+    assert request.job_id == "job-1"
+    assert request.task_id == "task-1"
+    assert request.worker_id == "worker-1"
+    assert request.attempt == 1
+    assert request.descriptor_version == 1
+    assert request.descriptor["frame_id"] == 1
+    assert request.inputs == ()
+    assert Path(request.scratch_path) == paths.worker_scratch("job-1", "worker-1").path
+    assert Path(request.scratch_path).is_dir()
+    assert "target_path" not in command.payload
+    assert "output_path" not in command.payload
+
+
+def test_execute_task_builder_resolves_and_verifies_staged_input(tmp_path: Path) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    jobs = JobStore(paths.evidence("job-1", "jobs.sqlite3").path)
+    jobs.initialize()
+    jobs.create_job("job-1")
+    payload = b"frame-image"
+    digest = hashlib.sha256(payload).hexdigest()
+    external = tmp_path / "frame.png"
+    external.write_bytes(payload)
+    ResourceBroker(paths).stage_input_file(
+        external,
+        paths.input("job-1", "frame-001.png"),
+        expected_sha256=digest,
+    )
+    jobs.create_task(
+        "task-1",
+        job_id="job-1",
+        descriptor=_m2_descriptor(digest=digest),
+        descriptor_version=1,
+    )
+    jobs.assign_task(
+        "task-1",
+        expected_generation=0,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+
+    request = parse_execute_task(ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1"))
+
+    assert len(request.inputs) == 1
+    task_input = request.inputs[0]
+    assert task_input.name == "frame-001.png"
+    assert Path(task_input.path) == paths.input("job-1", "frame-001.png").path
+    assert task_input.sha256 == digest
+    assert task_input.byte_size == len(payload)
+    assert "input_path" not in request.descriptor
+    assert "output_path" not in request.descriptor
+
+
+def test_execute_task_builder_rejects_staged_input_hash_mismatch(tmp_path: Path) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    jobs = JobStore(paths.evidence("job-1", "jobs.sqlite3").path)
+    jobs.initialize()
+    jobs.create_job("job-1")
+    paths.input("job-1", "frame-001.png").path.write_bytes(b"actual")
+    jobs.create_task(
+        "task-1",
+        job_id="job-1",
+        descriptor=_m2_descriptor(digest="0" * 64),
+        descriptor_version=1,
+    )
+    jobs.assign_task(
+        "task-1",
+        expected_generation=0,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+
+    with pytest.raises(RuntimeError, match="input verification failed"):
+        ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1")
+
+
+def test_execute_task_builder_rejects_malformed_m2_descriptor_before_dispatch(
+    tmp_path: Path,
+) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    jobs = JobStore(paths.evidence("job-1", "jobs.sqlite3").path)
+    jobs.initialize()
+    jobs.create_job("job-1")
+    descriptor = _m2_descriptor(digest="a" * 64)
+    descriptor["source_path"] = "C:/outside/frame.png"
+    jobs.create_task("task-1", job_id="job-1", descriptor=descriptor, descriptor_version=1)
+    jobs.assign_task(
+        "task-1",
+        expected_generation=0,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+
+    with pytest.raises(RuntimeError, match="invalid M2 frame task descriptor"):
+        ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1")
+
+
+def test_execute_task_builder_rejects_non_running_task(tmp_path: Path) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    jobs = JobStore(paths.evidence("job-1", "jobs.sqlite3").path)
+    jobs.initialize()
+    jobs.create_job("job-1")
+    jobs.create_task("task-1", job_id="job-1", descriptor={"frame_id": 1})
+
+    with pytest.raises(RuntimeError, match="RUNNING"):
+        ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1")
+
+
+def test_candidate_result_round_trip_preserves_only_provisional_artifact_evidence(
+    tmp_path: Path,
+) -> None:
+    paths, jobs = _assigned_task(tmp_path)
+    command = ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1")
+    result = TaskCandidateResult(
+        status=TaskCandidateStatus.SUCCEEDED,
+        artifacts=(
+            ProvisionalArtifact(
+                filename="candidate.png",
+                sha256="a" * 64,
+                byte_size=123,
+            ),
+        ),
+        findings=({"code": "QA.OK"},),
+    )
+
+    event = candidate_event(result=result, causation=command)
+    parsed = parse_candidate_event(event)
+
+    assert event.message_type == "TaskSucceededCandidate"
+    assert event.worker_id == "worker-1"
+    assert event.attempt == 1
+    assert parsed == result
+    assert set(event.payload["artifacts"][0]) == {"filename", "sha256", "byte_size"}
+
+
+def test_provisional_artifact_rejects_path_traversal_and_bad_hash() -> None:
+    with pytest.raises(WorkerTaskContractError, match="path component"):
+        ProvisionalArtifact(filename="../escape.png", sha256="a" * 64, byte_size=1)
+
+    with pytest.raises(WorkerTaskContractError, match="sha256"):
+        ProvisionalArtifact(filename="candidate.png", sha256="NOT-A-HASH", byte_size=1)
+
+
+def test_failed_candidate_requires_error_code() -> None:
+    with pytest.raises(WorkerTaskContractError, match="error_code"):
+        TaskCandidateResult(status=TaskCandidateStatus.FAILED)
