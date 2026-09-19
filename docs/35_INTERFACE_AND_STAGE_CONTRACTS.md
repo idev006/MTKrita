@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.4
+SSOT — Stage Contract Baseline v1.5
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -85,8 +85,14 @@ Every replaceable provider should expose:
 **Provider boundary:** `MetadataProcessingProvider`  
 **Input:** frame + metadata-zone config  
 **Output:** metadata detection + cleanup mask/plan + confidence/evidence  
-**Review:** multiple or ambiguous candidates  
-**Prohibited:** deleting arbitrary text/numbers outside approved metadata evidence  
+**Required evidence:** candidate count, selected bbox, anchor distance/proximity, fill/compactness, area ratio, dominance margin to the next plausible candidate, confidence and reason  
+**Automatic-selection rule:** the selected component must satisfy all configured area/shape constraints, lie within the approved corner-anchor envelope, and exceed the next plausible candidate by the configured dominance margin  
+**Review:** multiple plausible anchored candidates, insufficient dominance margin, implausible shape/area, or metadata connected to border/artwork  
+**Prohibited:** deleting arbitrary text/numbers merely because they occur inside the broad metadata zone  
+**Prohibited:** lowering global ambiguity thresholds to force a production case through automatic cleanup  
+**Rule:** the broad metadata zone is a search boundary; the smaller corner-anchor envelope is the automatic-selection boundary  
+**Rule:** a clearly non-anchored component must not compete with an anchored badge for auto-selection, but it remains recorded as evidence  
+**Rule:** detection may run without mutation for diagnostics/planning; destructive cleanup occurs only after the stage policy authorizes it  
 **Important:** metadata detection/removal must not redefine source transparency provenance
 
 ## S-07 Transparent-Route Cleanup
