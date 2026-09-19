@@ -1,7 +1,7 @@
 # MTKrita Master Project Control
 
 ## Status
-SSOT — Project Control Baseline v1.2
+SSOT — Project Control Baseline v1.3
 
 ## Purpose
 เอกสารควบคุมระดับบนสุดของโครงการ MTKrita เชื่อม Vision → Goals → Objectives → Mandatory Workflow → Workstreams → Milestones → Quality Gates → Release Criteria และป้องกัน scope drift
@@ -26,6 +26,7 @@ MTKrita เป็น **Document-Driven Project with SSOT** และใช้ **
 - **G-05 Production Readiness** — batch production + Windows 11 standalone distribution
 - **G-06 Engine Independence** — ใช้ proven/open-source providers หลัง stable interfaces โดยไม่ผูก domain workflow กับ engine เดียว
 - **G-07 Auditable Behavior** — workflow, use cases, UML, state, sequence, recovery และ stage contracts ต้องอยู่ใน SSOT
+- **G-08 Developer Handoff Readiness** — ทีมพัฒนาต้องสามารถเริ่มงานจาก SSOT ได้โดยไม่ต้อง reconstruct intent จากบทสนทนา
 
 ## 3. Mandatory Minimum Objectives
 MVP ต้องพิสูจน์ได้ว่า:
@@ -41,7 +42,6 @@ MVP ต้องพิสูจน์ได้ว่า:
 10. job/frame lifecycle และ recovery behavior ต้องเป็นไปตาม state/recovery SSOT
 
 ## 4. Mandatory End-to-End Workflow
-
 ```text
 Sticker Sheet Input
   ↓
@@ -102,7 +102,7 @@ Optional features may not delay mandatory MVP correctness.
 Role competency/authority SSOT: `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`.
 
 ## 7. Milestones
-- **M0 Documentation Baseline** — governance, requirements, architecture, behavioral models, QA/testing/traceability approved
+- **M0 Documentation Baseline — COMPLETE** — governance, requirements, architecture, behavioral models, QA/testing/traceability and developer handoff baseline approved
 - **M1 Core Skeleton — COMPLETE** — CLI, manifests, immutable inspection, test harness, Windows CI
 - **M2 Transparent Processing Baseline — IN PROGRESS** — split + border + metadata + transparency routing + content/smart-fit + PNG validation
 - **M3 Opaque Processing Baseline** — background removal + REVIEW fallback + mixed corpus E2E
@@ -133,7 +133,6 @@ Changes affecting split/crop, border, metadata, alpha/background, quality, dimen
 6. QA review before release
 
 ## 11. Behavioral Model SSOT
-The following documents collectively define runtime behavior:
 - `27_END_TO_END_WORKFLOW_SPEC.md`
 - `28_USE_CASE_SPECIFICATION.md`
 - `29_UML_SYSTEM_MODEL.md`
@@ -145,7 +144,19 @@ The following documents collectively define runtime behavior:
 - `35_INTERFACE_AND_STAGE_CONTRACTS.md`
 - `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
 
-## 12. Project Control References
+## 12. Developer Handoff SSOT
+Incoming development teams must begin with:
+- `42_DEVELOPER_START_HERE.md`
+- `37_DEVELOPER_HANDOFF_PACKAGE.md`
+- `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md`
+- `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md`
+- `40_ACCEPTANCE_TEST_MATRIX.md`
+- `41_M2_M3_IMPLEMENTATION_PLAN.md`
+- `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
+
+These documents define onboarding, work packages, engineering conventions, near-term implementation sequence, acceptance evidence and current implementation state.
+
+## 13. Project Control References
 - `00_TEAM_GOVERNANCE.md`
 - `01_PROJECT_CHARTER.md`
 - `02_PRODUCT_REQUIREMENTS.md`
@@ -161,7 +172,7 @@ The following documents collectively define runtime behavior:
 - `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md`
 - `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`
 - `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`
-- `27_END_TO_END_WORKFLOW_SPEC.md` through `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
+- `27_END_TO_END_WORKFLOW_SPEC.md` through `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
 - `DECISIONS.md`
 
-This document governs project direction; lower-level SSOT documents provide detailed behavior, design and evidence rules.
+This document governs project direction; lower-level SSOT documents provide detailed behavior, design, execution and evidence rules.
