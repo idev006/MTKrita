@@ -25,6 +25,8 @@ MVP รองรับ 2 rows × 5 columns = 10 frames แต่โครงส�
 - มี meaningful transparency
 - มี semi-transparent antialiased edges
 
+การจำแนกเพื่อ routing ต้องอ้างอิง state ของ extracted frame ก่อน operation ใด ๆ ที่สามารถสร้าง alpha ใหม่ได้
+
 ### PR-006 Opaque Background Processing
 ต้องสามารถสร้าง foreground mask และ alpha output จาก input ที่ไม่มี transparency โดยกรณี confidence ต่ำต้องส่ง REVIEW แทนการลบ foreground แบบเดา
 
@@ -44,14 +46,7 @@ MVP รองรับ 2 rows × 5 columns = 10 frames แต่โครงส�
 ต้องมี machine-readable report และ human-readable summary พร้อม actions/findings ต่อ frame
 
 ### PR-012 Adaptive Border Detection and Removal
-หลัง split เป็น frame ระบบต้องตรวจ border รายเฟรม และรองรับ border ที่มี:
-- สีต่างกัน
-- ความหนาต่างกัน
-- ความหนาแต่ละด้านไม่เท่ากัน
-- anti-alias / blur จากการ resize
-- border ไม่ครบทุกด้าน
-
-การตัดสิน border ต้องใช้ position/continuity/geometry/connectivity และ confidence ไม่ใช่ลบด้วยสีเพียงอย่างเดียว หาก border แตะ artwork และแยกไม่มั่นใจ ต้อง `REVIEW` โดยห้าม silent destructive removal
+หลัง split เป็น frame ระบบต้องตรวจ border รายเฟรม และรองรับ border ที่มีสี/ความหนาแตกต่าง anti-alias/blur และ border ไม่ครบทุกด้าน โดยใช้ position/continuity/geometry/connectivity และ confidence ไม่ใช่ลบด้วยสีเพียงอย่างเดียว หาก border แตะ artwork และแยกไม่มั่นใจ ต้อง `REVIEW`
 
 ### PR-013 Quality-Preserving Image Processing
 - lossless-first internal flow
@@ -80,19 +75,21 @@ UI ต้องทำให้ผู้ใช้ตรวจ `REVIEW/FAIL` เ�
 - automatic removal ต้องใช้ confidence threshold
 - ambiguity ต้องเป็น `REVIEW`
 - feature ต้องเปิด/ปิดได้ตาม profile
+- metadata detection/removal ต้องไม่เปลี่ยน source transparency provenance ที่ใช้ตัดสิน background route
 
 ### PR-018 Conditional Background Removal Routing
-ระบบต้องตรวจ meaningful transparency ก่อน background processing เสมอ
+ระบบต้องตรวจ meaningful transparency ก่อน background processing เสมอ และ routing decision ต้องยึด **source/extracted-frame transparency provenance ก่อน alpha-generating cleanup**
 
-- หาก frame มี meaningful transparent background อยู่แล้ว ให้ **SKIP background removal** โดย default และรักษา alpha/anti-aliased edges เดิม
-- หาก frame ไม่มี meaningful transparency หรือ fully opaque ให้ route เข้าสู่ opaque background-removal pipeline
-- ห้ามทำ segmentation ซ้ำบน transparent frame โดยไม่มี explicit reason/config
-- routing decision ต้องถูกบันทึกใน manifest/processing log
+- หาก source frame มี meaningful transparent background อยู่แล้ว ให้ **SKIP background removal** โดย default และรักษา alpha/anti-aliased edges เดิม
+- หาก source frame ไม่มี meaningful transparency หรือ fully opaque ให้ route เข้าสู่ opaque background-removal pipeline
+- transparency ที่เกิดจาก metadata/frame-number cleanup ภายหลัง **ห้าม** ทำให้ opaque frame เปลี่ยนเป็น transparent route
+- routing decision และ provenance ต้องถูกบันทึกใน manifest/processing log
+- ห้ามทำ segmentation ซ้ำบน source-transparent frame โดยไม่มี explicit reason/config
 
 ### PR-019 Mandatory MVP Processing Contract
 ก่อนประกาศ MVP พร้อมใช้งาน ระบบต้องทำ workflow ขั้นต่ำนี้ได้ครบ:
 
-`Sticker Sheet → Split Frames → Remove Border → Remove Frame Number → Conditional Background Removal → PNG Export`
+`Sticker Sheet → Split Frames → Remove Border → Classify Source Transparency → Detect/Plan Frame Number Removal → Conditional Background Removal → Apply Cleanup → PNG Export`
 
 รายละเอียด acceptance และ safety baseline ให้อ้างอิง `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md` ซึ่งเป็น release blocker สำหรับ MVP
 
@@ -121,3 +118,6 @@ Core processing ต้อง headless-capable; Krita เป็น optional integ
 
 ### NFR-008 Quality Evidence
 Critical release behavior ต้องมี objective verification evidence และ requirement-to-test traceability
+
+### NFR-009 Provenance Safety
+ระบบต้องสามารถแยก provenance ของ source alpha, cleanup-generated alpha, background-removal alpha และ final alpha เพื่อป้องกัน routing decision ถูกเปลี่ยนโดย intermediate transformation
