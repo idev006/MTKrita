@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .artifact_commit import ArtifactCommitReconciler
 from .job_store import JobStore
 
 
@@ -10,6 +11,12 @@ class ReconciledJob:
     job_id: str
     prior_state: str
     interrupted_tasks: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class StartupRecoveryReport:
+    finalized_artifact_commits: tuple[str, ...]
+    reconciled_jobs: tuple[ReconciledJob, ...]
 
 
 @dataclass(frozen=True)
@@ -53,3 +60,19 @@ class StartupReconciler:
                 )
             )
         return tuple(results)
+
+
+@dataclass(frozen=True)
+class StartupRecoveryCoordinator:
+    """Enforce recovery ordering: artifact evidence first, orphan interruption second."""
+
+    artifact_commits: ArtifactCommitReconciler
+    jobs: StartupReconciler
+
+    def reconcile(self) -> StartupRecoveryReport:
+        finalized = self.artifact_commits.reconcile()
+        reconciled_jobs = self.jobs.reconcile()
+        return StartupRecoveryReport(
+            finalized_artifact_commits=finalized,
+            reconciled_jobs=reconciled_jobs,
+        )
