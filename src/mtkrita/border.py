@@ -107,6 +107,10 @@ def _strip_samples(
     return samples
 
 
+def _side_depth(image: Image.Image, side: str) -> int:
+    return image.height if side in {"top", "bottom"} else image.width
+
+
 def _visible_fraction(samples: list[tuple[int, int, int] | None]) -> float:
     if not samples:
         return 0.0
@@ -272,7 +276,7 @@ def _build_inset_side(
     inner_offset = end + 1
     inner = (
         _strip_samples(image, candidate.side, inner_offset)
-        if inner_offset < max_search
+        if inner_offset < _side_depth(image, candidate.side)
         else []
     )
     trim = min(thickness, max(0, len(inner) // 4))
