@@ -34,6 +34,7 @@ class MetadataDetection:
     analysis_excluded_pixel_count: int = 0
     analysis_excluded_candidate_pixel_count: int = 0
     analysis_exclusion_sha256: str | None = None
+    analysis_shape_overlap_pixel_count: int = 0
     fragmented_by_exclusion: bool = False
     fragment_association_applied: bool = False
     fragment_association_resolved: bool = False
@@ -56,6 +57,7 @@ class _MetadataCandidate:
     fragment_count: int = 1
     requires_joint_cleanup: bool = False
     association_resolved: bool = False
+    analysis_shape_overlap_pixel_count: int = 0
 
 
 def _validate_zone(zone: MetadataZone) -> None:
@@ -120,6 +122,7 @@ def _candidate_from_mask(
     fragment_count: int = 1,
     requires_joint_cleanup: bool = False,
     association_resolved: bool = False,
+    analysis_overlap: np.ndarray | None = None,
 ) -> _MetadataCandidate | None:
     ys, xs = np.nonzero(mask)
     if xs.size == 0:
@@ -132,8 +135,15 @@ def _candidate_from_mask(
         return None
 
     area = int(xs.size)
+    overlap_count = 0
+    if analysis_overlap is not None:
+        if analysis_overlap.shape != mask.shape:
+            raise ValueError("analysis overlap shape does not match candidate mask")
+        overlap_count = int(np.count_nonzero(analysis_overlap[y0:y1, x0:x1]))
+
     area_ratio = area / max(1, zone_width * zone_height)
-    fill_ratio = area / (width * height)
+    analysis_area = min(width * height, area + overlap_count)
+    fill_ratio = analysis_area / (width * height)
     compactness = min(width, height) / max(width, height)
     center_x = x0 + (width / 2)
     center_y = y0 + (height / 2)
@@ -153,6 +163,7 @@ def _candidate_from_mask(
         fragment_count=fragment_count,
         requires_joint_cleanup=requires_joint_cleanup,
         association_resolved=association_resolved,
+        analysis_shape_overlap_pixel_count=overlap_count,
     )
 
 
@@ -227,6 +238,7 @@ def _group_candidates_by_raw_topology(
             fragment_count=max(1, fragment_total),
             requires_joint_cleanup=excluded_from_group,
             association_resolved=excluded_from_group,
+            analysis_overlap=(raw_group & zone_exclusion) if excluded_from_group else None,
         )
         if candidate is not None:
             candidates.append(candidate)
@@ -381,6 +393,7 @@ def detect_corner_metadata(
             compactness=best.compactness,
             anchor_distance=best.anchor_distance,
             dominance_margin=float(margin),
+            analysis_shape_overlap_pixel_count=best.analysis_shape_overlap_pixel_count,
             **exclusion_evidence,
         )
 
@@ -391,6 +404,8 @@ def detect_corner_metadata(
     reason = "single dominant anchored top-left metadata candidate"
     if best.requires_joint_cleanup:
         reason += "; exclusion-fragment association resolved for joint cleanup"
+    if best.analysis_shape_overlap_pixel_count:
+        reason += "; approved exclusion overlap used for shape confidence only"
     if enclosed_count:
         reason += "; enclosed visible interior detail included"
 
@@ -406,6 +421,7 @@ def detect_corner_metadata(
         compactness=best.compactness,
         anchor_distance=best.anchor_distance,
         dominance_margin=float(margin),
+        analysis_shape_overlap_pixel_count=best.analysis_shape_overlap_pixel_count,
         fragmented_by_exclusion=best.requires_joint_cleanup and best.fragment_count > 1,
         fragment_association_applied=best.requires_joint_cleanup,
         fragment_association_resolved=best.association_resolved,

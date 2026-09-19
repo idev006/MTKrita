@@ -95,6 +95,9 @@ def _metadata_evidence(detection: MetadataDetection) -> dict[str, object]:
             detection.analysis_excluded_candidate_pixel_count
         ),
         "metadata_analysis_exclusion_sha256": detection.analysis_exclusion_sha256,
+        "metadata_analysis_shape_overlap_pixel_count": (
+            detection.analysis_shape_overlap_pixel_count
+        ),
         "metadata_fragmented_by_exclusion": detection.fragmented_by_exclusion,
         "metadata_fragment_association_applied": detection.fragment_association_applied,
         "metadata_fragment_association_resolved": detection.fragment_association_resolved,

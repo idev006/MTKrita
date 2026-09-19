@@ -111,6 +111,7 @@ def test_analysis_exclusion_outside_candidate_does_not_change_badge_selection() 
     assert detection.analysis_excluded_pixel_count > 0
     assert detection.analysis_excluded_candidate_pixel_count == 0
     assert detection.requires_joint_cleanup is False
+    assert detection.analysis_shape_overlap_pixel_count == 0
 
 
 def test_split_badge_fragments_are_associated_only_for_joint_cleanup() -> None:
@@ -123,6 +124,8 @@ def test_split_badge_fragments_are_associated_only_for_joint_cleanup() -> None:
 
     assert detection.mask is not None
     assert detection.analysis_excluded_candidate_pixel_count > 0
+    assert detection.analysis_shape_overlap_pixel_count > 0
+    assert detection.confidence >= 0.72
     assert detection.fragmented_by_exclusion is True
     assert detection.fragment_association_applied is True
     assert detection.fragment_association_resolved is True
