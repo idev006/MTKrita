@@ -125,6 +125,7 @@ def test_analysis_exclusion_intersecting_candidate_marks_completeness_unresolved
     assert detection.analysis_exclusion_applied is True
     assert detection.analysis_excluded_candidate_pixel_count > 0
     assert detection.fragmented_by_exclusion is True
+    assert detection.fragment_association_resolved is False
     assert "analysis exclusion" in detection.reason
     assert detection.mask is not None
 
@@ -146,3 +147,31 @@ def test_analysis_exclusion_size_mismatch_is_rejected() -> None:
         assert "size does not match" in str(exc)
     else:
         raise AssertionError("expected exclusion-mask size validation failure")
+
+
+def test_enclosed_visible_dark_detail_is_included_in_metadata_mask() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((8, 8, 34, 34), fill=(180, 220, 120, 255))
+    draw.rectangle((19, 14, 21, 28), fill=(0, 0, 0, 255))
+
+    detection = detect_corner_metadata(image)
+
+    assert detection.mask is not None
+    assert detection.enclosed_visible_hole_pixel_count > 0
+    assert detection.mask.getpixel((20, 20)) == 255
+
+    cleaned = remove_detected_metadata(image, detection)
+    assert cleaned.getpixel((20, 20))[3] == 0
+
+
+def test_open_dark_notch_is_not_filled_as_metadata_interior() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((8, 8, 34, 34), fill=(180, 220, 120, 255))
+    draw.line((20, 20, 20, 7), fill=(0, 0, 0, 255), width=3)
+
+    detection = detect_corner_metadata(image)
+
+    assert detection.mask is not None
+    assert detection.mask.getpixel((20, 20)) == 0

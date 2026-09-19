@@ -33,6 +33,11 @@ class MetadataDetection:
     analysis_excluded_pixel_count: int = 0
     analysis_excluded_candidate_pixel_count: int = 0
     fragmented_by_exclusion: bool = False
+    fragment_association_applied: bool = False
+    fragment_association_resolved: bool = False
+    associated_fragment_count: int = 0
+    requires_joint_cleanup: bool = False
+    enclosed_visible_hole_pixel_count: int = 0
     coordinate_space: str = "pre_cleanup_frame"
 
 
@@ -95,6 +100,43 @@ def _analysis_exclusion(
         "analysis_excluded_candidate_pixel_count": excluded_candidate,
         "fragmented_by_exclusion": excluded_candidate > 0,
     }
+
+
+def _complete_enclosed_visible_holes(
+    selected_mask: np.ndarray,
+    alpha: np.ndarray,
+) -> tuple[np.ndarray, int]:
+    """Add only visible holes fully enclosed by the approved candidate topology."""
+    mask = selected_mask.astype(bool, copy=True)
+    ys, xs = np.nonzero(mask)
+    if xs.size == 0:
+        return mask, 0
+
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    local = mask[y0:y1, x0:x1]
+    inverse = (~local).astype(np.uint8)
+    count, labels = cv2.connectedComponents(inverse, connectivity=8)
+    if count <= 1:
+        return mask, 0
+
+    exterior_labels = set(labels[0, :].tolist())
+    exterior_labels.update(labels[-1, :].tolist())
+    exterior_labels.update(labels[:, 0].tolist())
+    exterior_labels.update(labels[:, -1].tolist())
+
+    holes = np.zeros_like(local, dtype=bool)
+    for label in range(1, count):
+        if label not in exterior_labels:
+            holes |= labels == label
+
+    holes &= alpha[y0:y1, x0:x1] > 8
+    hole_count = int(np.count_nonzero(holes))
+    if hole_count:
+        local_completed = mask[y0:y1, x0:x1].copy()
+        local_completed |= holes
+        mask[y0:y1, x0:x1] = local_completed
+    return mask, hole_count
 
 
 def detect_corner_metadata(
@@ -237,10 +279,16 @@ def detect_corner_metadata(
             **exclusion_evidence,
         )
 
+    local = labels == best.label
+    enclosed_count = 0
+    if not bool(exclusion_evidence["fragmented_by_exclusion"]):
+        local, enclosed_count = _complete_enclosed_visible_holes(local, zone_alpha)
+
     full_mask = np.zeros((height, width), dtype=np.uint8)
-    local = (labels == best.label).astype(np.uint8) * 255
-    full_mask[:zone_height, :zone_width] = local
+    full_mask[:zone_height, :zone_width] = local.astype(np.uint8) * 255
     reason = "single dominant anchored top-left metadata candidate"
+    if enclosed_count:
+        reason += "; enclosed visible interior detail included"
     if bool(exclusion_evidence["fragmented_by_exclusion"]):
         reason += "; analysis exclusion intersects candidate pixels"
     return MetadataDetection(
@@ -255,6 +303,7 @@ def detect_corner_metadata(
         compactness=best.compactness,
         anchor_distance=best.anchor_distance,
         dominance_margin=float(margin),
+        enclosed_visible_hole_pixel_count=enclosed_count,
         **exclusion_evidence,
     )
 
@@ -267,7 +316,9 @@ def remove_detected_metadata(
 ) -> Image.Image:
     if detection.mask is None or detection.bbox is None:
         raise ValueError("no removable metadata mask")
-    if detection.fragmented_by_exclusion:
+    if detection.requires_joint_cleanup:
+        raise ValueError("metadata mask requires joint cleanup")
+    if detection.fragmented_by_exclusion and not detection.fragment_association_resolved:
         raise ValueError("metadata mask completeness unresolved after analysis exclusion")
     if detection.confidence < auto_threshold:
         raise ValueError("metadata confidence below automatic removal threshold")
