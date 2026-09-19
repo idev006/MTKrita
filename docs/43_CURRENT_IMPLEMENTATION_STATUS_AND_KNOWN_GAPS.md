@@ -1,7 +1,7 @@
 # MTKrita Current Implementation Status and Known Gaps
 
 ## Status
-SSOT — Engineering Handoff Status v1.0
+SSOT — Engineering Handoff Status v1.1
 
 ## Purpose
 ป้องกันความสับสนระหว่างสิ่งที่ถูกกำหนดในเอกสารกับสิ่งที่ implement/verify แล้วจริง ณ จุด handoff
@@ -14,9 +14,12 @@ SSOT — Engineering Handoff Status v1.0
 - input inspection + source hashing
 - job manifest baseline
 - Windows CI workflow
-- versioned LINE static configuration
+- TOML config baseline + `tomllib` loader/validation tests
 - project architecture, workflow, use cases, UML, sequence, state, deployment, recovery, data-flow, stage contracts, security model
+- provider interface architecture
+- PathManager/MainBoard/ResourceBroker/multi-worker/reliability architecture specifications
 - developer handoff/WBS/coding standards/acceptance matrix
+- golden-corpus specification, runbook, release checklist, maintenance guide, glossary and team execution playbook
 
 ## Active M2 Development
 Active work is represented by PR #8 / branch `feat/m2-transparent-border`.
@@ -41,6 +44,22 @@ Implemented there at handoff time includes:
 - transparent golden corpus gate
 - final CI green evidence after integration with current `main`
 
+## Architecture Approved but Not Fully Implemented
+The following are authoritative architecture, not completed runtime features yet:
+- MainBoard control-plane composition
+- PathManager + typed resource references
+- ResourceBroker + centralized shared-state commit
+- durable JobStore/checkpoints
+- worker process manager
+- task lease / attempt / stale-result rejection
+- multi-worker parallel scheduling
+- pause / stop / resume / startup reconciliation
+- centralized structured logging/event collection
+- diagnostic bundle generation
+- atomic artifact commit flow
+
+These capabilities should be implemented through the WBS before claiming M5/M6 production-automation readiness.
+
 ## M3 Not Yet Complete
 Required opaque-background work still includes:
 - background classifier
@@ -57,18 +76,21 @@ The last observed M2 CI failure was static-analysis related (`B008` object const
 Do not assume a documented capability is implemented merely because it appears in SSOT. Use this status document, GitHub Issues/PRs, tests, and current branch contents together to determine implementation state.
 
 ## First Engineering Actions for Incoming Team
-1. sync/rebase or merge current `main` documentation/governance changes into the M2 branch as appropriate;
-2. run Ruff + pytest locally/CI;
-3. resolve any conflicts without dropping SSOT changes;
-4. complete WP-M2-01 through WP-M2-06;
-5. produce M2 acceptance evidence;
-6. merge only after gate criteria are met;
-7. begin M3 work packages afterward.
+1. read `42_DEVELOPER_START_HERE.md` and complete `50_ENGINEERING_HANDOFF_CHECKLIST.md`;
+2. sync/rebase or merge current `main` SSOT changes into active implementation branches as appropriate;
+3. run Ruff + pytest locally/CI;
+4. complete M2 work packages and produce acceptance evidence;
+5. merge only after gate criteria are met;
+6. implement M3 opaque pipeline;
+7. implement runtime-control architecture work packages before production batch milestone.
 
 ## Canonical References
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
 - `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md`
 - `40_ACCEPTANCE_TEST_MATRIX.md`
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
+- `50_ENGINEERING_HANDOFF_CHECKLIST.md`
+- `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
+- `58_SSOT_COVERAGE_AUDIT.md`
 - PR #8
 - Issues #2 and #3
