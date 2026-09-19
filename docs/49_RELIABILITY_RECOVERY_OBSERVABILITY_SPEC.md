@@ -1,7 +1,7 @@
 # MTKrita Reliability, Recovery and Observability Specification
 
 ## Status
-SSOT — Reliability Baseline v1.1
+SSOT — Reliability Baseline v1.2
 
 ## Purpose
 กำหนดคุณสมบัติด้านความคงทน ความเชื่อถือได้ ความสามารถในการหยุด/พัก/ทำต่อ การกู้คืน การบันทึก และการวินิจฉัยข้อผิดพลาดของ MTKrita
@@ -173,6 +173,13 @@ Workers send structured log/events to the central LogSink/EventBus. Workers do n
 
 This prevents interleaved/corrupted log writes and preserves centralized ordering/correlation metadata.
 
+MVP baseline:
+- one MainBoard-owned `JsonlLogSink` subscribes centrally to EventBus;
+- each job has its own UTF-8 JSONL operational log resolved through PathManager;
+- each append is flushed; production configuration may enable fsync where durability outweighs throughput;
+- LogSink is replaceable and shall not contain business rules;
+- UI and workers never open the shared job log for mutation.
+
 ## 11. Error Model
 
 Use stable error codes/categories, e.g.:
@@ -207,18 +214,31 @@ An error descriptor contains:
 ## 12. Diagnostic Bundle
 
 The application should be able to export a diagnostic bundle for a job, containing safe non-secret information such as:
-- job manifest
+- job manifest/state
+- task state
 - effective config with sensitive fields redacted
-- engine/provider/dependency versions
+- engine/provider/dependency versions where available
 - structured logs
 - state-transition history
-- artifact commit journal/status
+- artifact commit journal/status when available
 - error descriptors
 - environment summary
 - artifact hashes/metadata
 - selected QA previews if policy allows
 
 Original private images should not be included automatically unless the user explicitly chooses to include them.
+
+### 12.1 MVP Diagnostic Safety Contract
+The baseline diagnostic builder is read-only with respect to authoritative job/task/artifact state.
+
+Required behavior:
+- bundle output is created under PathManager-owned evidence space;
+- existing diagnostic bundle files are not silently overwritten;
+- sensitive config keys containing password/passwd/secret/token/api-key/credential semantics are redacted recursively;
+- original/source/private image bytes are excluded by default;
+- job state, task state, durable event history, environment summary and structured JSONL logs are eligible baseline contents;
+- adding source images or QA previews requires an explicit future user-controlled policy;
+- diagnostic generation failure must not mutate processing state.
 
 ## 13. Metrics
 
@@ -301,6 +321,8 @@ Reliability acceptance suite includes:
 - invalid config
 - concurrent 40-frame batch
 - diagnostic bundle generation
+- diagnostic redaction and source-image exclusion
+- queue/inflight backpressure and fairness
 
 ## 20. Definition of Reliable Completion
 
