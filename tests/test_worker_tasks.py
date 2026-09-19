@@ -18,6 +18,30 @@ from mtkrita.worker_tasks import (
 )
 
 
+def _m2_descriptor(*, digest: str) -> dict[str, object]:
+    return {
+        "task_type": "m2.frame",
+        "input_name": "frame-001.png",
+        "input_sha256": digest,
+        "output_name": "01.png",
+        "frame_index": 1,
+        "row": 0,
+        "column": 0,
+        "extraction_rect": [0, 0, 512, 512],
+        "extraction_method": "exact-grid",
+        "extraction_confidence": 1.0,
+        "pipeline_config": {
+            "target_width": 370,
+            "target_height": 320,
+            "margin": 10,
+            "remove_border": True,
+            "remove_metadata": True,
+            "border_auto_threshold": 0.995,
+            "metadata_auto_threshold": 0.72,
+        },
+    }
+
+
 def _assigned_task(tmp_path: Path):
     paths = PathManager(tmp_path / "workspace")
     paths.prepare_job("job-1")
@@ -78,12 +102,7 @@ def test_execute_task_builder_resolves_and_verifies_staged_input(tmp_path: Path)
     jobs.create_task(
         "task-1",
         job_id="job-1",
-        descriptor={
-            "task_type": "m2.frame",
-            "input_name": "frame-001.png",
-            "input_sha256": digest,
-            "output_name": "01.png",
-        },
+        descriptor=_m2_descriptor(digest=digest),
         descriptor_version=1,
     )
     jobs.assign_task(
@@ -116,12 +135,7 @@ def test_execute_task_builder_rejects_staged_input_hash_mismatch(tmp_path: Path)
     jobs.create_task(
         "task-1",
         job_id="job-1",
-        descriptor={
-            "task_type": "m2.frame",
-            "input_name": "frame-001.png",
-            "input_sha256": "0" * 64,
-            "output_name": "01.png",
-        },
+        descriptor=_m2_descriptor(digest="0" * 64),
         descriptor_version=1,
     )
     jobs.assign_task(
@@ -133,6 +147,29 @@ def test_execute_task_builder_rejects_staged_input_hash_mismatch(tmp_path: Path)
     )
 
     with pytest.raises(RuntimeError, match="input verification failed"):
+        ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1")
+
+
+def test_execute_task_builder_rejects_malformed_m2_descriptor_before_dispatch(
+    tmp_path: Path,
+) -> None:
+    paths = PathManager(tmp_path / "workspace")
+    paths.prepare_job("job-1")
+    jobs = JobStore(paths.evidence("job-1", "jobs.sqlite3").path)
+    jobs.initialize()
+    jobs.create_job("job-1")
+    descriptor = _m2_descriptor(digest="a" * 64)
+    descriptor["source_path"] = "C:/outside/frame.png"
+    jobs.create_task("task-1", job_id="job-1", descriptor=descriptor, descriptor_version=1)
+    jobs.assign_task(
+        "task-1",
+        expected_generation=0,
+        worker_id="worker-1",
+        attempt=1,
+        lease_expires_at="2030-01-01T00:00:00+00:00",
+    )
+
+    with pytest.raises(RuntimeError, match="invalid M2 frame task descriptor"):
         ExecuteTaskCommandBuilder(jobs=jobs, paths=paths).build("task-1")
 
 
