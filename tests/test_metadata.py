@@ -17,6 +17,7 @@ def test_detects_and_removes_top_left_badge_without_touching_artwork_elsewhere()
     assert detection.dominance_margin == 1.0
     assert detection.analysis_exclusion_applied is False
     assert detection.fragmented_by_exclusion is False
+    assert detection.segmentation_basis == "rgb_background_distance"
 
     result = remove_detected_metadata(image, detection)
     assert result.getpixel((20, 20))[3] == 0
@@ -218,3 +219,49 @@ def test_open_dark_notch_is_not_filled_as_metadata_interior() -> None:
     detection = detect_corner_metadata(image)
     assert detection.mask is not None
     assert detection.mask.getpixel((20, 20)) == 0
+
+
+def test_transparent_metadata_uses_alpha_visible_topology_when_edge_rgb_is_border_colored() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    border = (180, 235, 120, 255)
+    draw.rectangle((4, 4, 195, 155), outline=border, width=3)
+    draw.ellipse((8, 8, 34, 34), fill=border)
+    draw.rectangle((90, 50, 150, 120), fill=(230, 120, 40, 255))
+    exclusion = Image.new("L", image.size, 0)
+    ex = ImageDraw.Draw(exclusion)
+    ex.rectangle((4, 4, 6, 155), fill=255)
+    ex.rectangle((193, 4, 195, 155), fill=255)
+    ex.rectangle((4, 4, 195, 6), fill=255)
+    ex.rectangle((4, 153, 195, 155), fill=255)
+
+    detection = detect_corner_metadata(image, analysis_exclusion_mask=exclusion)
+
+    assert detection.segmentation_basis == "alpha_visible"
+    assert detection.mask is not None
+    assert detection.bbox is not None
+    assert detection.confidence >= 0.72
+    assert detection.mask.getpixel((20, 20)) == 255
+    assert detection.mask.getpixel((120, 80)) == 0
+
+
+def test_transparent_nonanchored_alpha_visible_artwork_is_preserved() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 0))
+    ImageDraw.Draw(image).rectangle((36, 20, 48, 34), fill=(220, 80, 80, 255))
+
+    detection = detect_corner_metadata(image)
+
+    assert detection.segmentation_basis == "alpha_visible"
+    assert detection.mask is None
+    assert detection.bbox is None
+
+
+def test_opaque_metadata_retains_rgb_background_fallback() -> None:
+    image = Image.new("RGBA", (200, 160), (0, 0, 0, 255))
+    ImageDraw.Draw(image).ellipse((8, 8, 34, 34), fill=(180, 220, 120, 255))
+
+    detection = detect_corner_metadata(image)
+
+    assert detection.segmentation_basis == "rgb_background_distance"
+    assert detection.mask is not None
+    assert detection.alpha_visibility_threshold == 8

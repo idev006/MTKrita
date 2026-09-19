@@ -44,6 +44,8 @@ class MetadataDetection:
     ignored_remote_fragment_count: int = 0
     requires_joint_cleanup: bool = False
     enclosed_visible_hole_pixel_count: int = 0
+    segmentation_basis: str = "rgb_background_distance"
+    alpha_visibility_threshold: int = 8
     coordinate_space: str = "pre_cleanup_frame"
 
 
@@ -88,6 +90,21 @@ def _background_rgb(rgba: np.ndarray) -> np.ndarray:
     if visible.size == 0:
         return np.zeros(3, dtype=np.int16)
     return np.median(visible, axis=0)
+
+
+def _meaningful_transparency(
+    alpha: np.ndarray,
+    *,
+    transparent_alpha_threshold: int = 254,
+    meaningful_ratio_threshold: float = 0.0001,
+) -> bool:
+    if alpha.size == 0:
+        return False
+    transparent_count = int(np.count_nonzero(alpha <= transparent_alpha_threshold))
+    return (
+        transparent_count / alpha.size >= meaningful_ratio_threshold
+        and int(alpha.min()) <= transparent_alpha_threshold
+    )
 
 
 def _analysis_exclusion(
@@ -339,6 +356,7 @@ def detect_corner_metadata(
     min_fill_ratio: float = 0.20,
     min_compactness: float = 0.35,
     dominance_margin: float = 0.12,
+    alpha_visibility_threshold: int = 8,
 ) -> MetadataDetection:
     """Detect compact corner metadata with conservative topology evidence."""
     resolved_zone = zone or MetadataZone()
@@ -351,6 +369,8 @@ def detect_corner_metadata(
         raise ValueError("min_compactness must be between 0 and 1")
     if not 0 <= dominance_margin <= 1:
         raise ValueError("dominance_margin must be between 0 and 1")
+    if not 0 <= alpha_visibility_threshold <= 254:
+        raise ValueError("alpha_visibility_threshold must be between 0 and 254")
 
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
     height, width = rgba.shape[:2]
@@ -363,11 +383,24 @@ def detect_corner_metadata(
 
     rgb = rgba[:, :, :3].astype(np.int16)
     alpha = rgba[:, :, 3]
-    background = _background_rgb(rgba)
-    zone_rgb = rgb[:zone_height, :zone_width, :]
     zone_alpha = alpha[:zone_height, :zone_width]
-    distance = np.max(np.abs(zone_rgb - background), axis=2)
-    raw_candidate = ((distance > color_tolerance) & (zone_alpha > 8)).astype(np.uint8) * 255
+
+    if _meaningful_transparency(alpha):
+        segmentation_basis = "alpha_visible"
+        raw_candidate = (zone_alpha > alpha_visibility_threshold).astype(np.uint8) * 255
+    else:
+        segmentation_basis = "rgb_background_distance"
+        background = _background_rgb(rgba)
+        zone_rgb = rgb[:zone_height, :zone_width, :]
+        distance = np.max(np.abs(zone_rgb - background), axis=2)
+        raw_candidate = (
+            (distance > color_tolerance) & (zone_alpha > alpha_visibility_threshold)
+        ).astype(np.uint8) * 255
+
+    segmentation_evidence = {
+        "segmentation_basis": segmentation_basis,
+        "alpha_visibility_threshold": alpha_visibility_threshold,
+    }
     candidate_mask, zone_exclusion, exclusion_evidence = _analysis_exclusion(
         image,
         analysis_exclusion_mask,
@@ -397,6 +430,7 @@ def detect_corner_metadata(
             fragment_association_applied=True,
             fragment_association_resolved=False,
             **exclusion_evidence,
+            **segmentation_evidence,
         )
     if not candidates:
         return MetadataDetection(
@@ -405,6 +439,7 @@ def detect_corner_metadata(
             None,
             "no compact metadata component found",
             **exclusion_evidence,
+            **segmentation_evidence,
         )
 
     plausible = [
@@ -425,6 +460,7 @@ def detect_corner_metadata(
             candidate_count=len(candidates),
             anchored_candidate_count=0,
             **exclusion_evidence,
+            **segmentation_evidence,
         )
 
     plausible.sort(reverse=True, key=lambda item: item.confidence)
@@ -446,6 +482,7 @@ def detect_corner_metadata(
             analysis_shape_overlap_pixel_count=best.analysis_shape_overlap_pixel_count,
             ignored_remote_fragment_count=best.ignored_remote_fragment_count,
             **exclusion_evidence,
+            **segmentation_evidence,
         )
 
     completed_mask, enclosed_count = _complete_enclosed_visible_holes(best.mask, zone_alpha)
@@ -483,6 +520,7 @@ def detect_corner_metadata(
         requires_joint_cleanup=best.requires_joint_cleanup,
         enclosed_visible_hole_pixel_count=enclosed_count,
         **exclusion_evidence,
+        **segmentation_evidence,
     )
 
 
