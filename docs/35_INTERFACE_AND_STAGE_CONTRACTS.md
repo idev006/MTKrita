@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.6
+SSOT — Stage Contract Baseline v1.7
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -83,13 +83,17 @@ Every replaceable provider should expose:
 
 ## S-06 Frame Metadata Detection / Cleanup Planning
 **Provider boundary:** `MetadataProcessingProvider`  
-**Input:** frame + metadata-zone config  
+**Input:** frame + metadata-zone config + optional analysis-only exclusion mask supplied by an approved upstream detector  
 **Output:** metadata detection + cleanup mask/plan + confidence/evidence  
 **Required evidence:** candidate count, selected bbox, anchor distance/proximity, fill/compactness, area ratio, dominance margin to the next plausible candidate, confidence and reason  
+**Required exclusion evidence when used:** exclusion-applied flag, excluded-pixel count/ratio, whether the selected metadata candidate may have been fragmented by exclusion, and the coordinate-space identity shared with the frame  
 **Automatic-selection rule:** the selected component must satisfy all configured area/shape constraints, lie within the approved corner-anchor envelope, and exceed the next plausible candidate by the configured dominance margin  
-**Review:** multiple plausible anchored candidates, insufficient dominance margin, implausible shape/area, or metadata connected to border/artwork  
+**Analysis-exclusion rule:** an approved spatial border mask may be excluded from connected-component analysis to prevent the decorative border from merging with a badge; exclusion affects analysis only and is not itself proof that any excluded pixel is metadata  
+**Fragmentation rule:** if exclusion may have split one metadata object into multiple fragments, the selected fragment must not be treated as a complete destructive metadata mask unless a separately validated association/reconstruction rule proves completeness; otherwise `REVIEW`  
+**Review:** multiple plausible anchored candidates, insufficient dominance margin, implausible shape/area, metadata connected to unexplained artwork, or unresolved exclusion fragmentation  
 **Prohibited:** deleting arbitrary text/numbers merely because they occur inside the broad metadata zone  
 **Prohibited:** lowering global ambiguity thresholds to force a production case through automatic cleanup  
+**Prohibited:** filling/deleting the whole anchor box or performing broad morphology merely to reconnect an exclusion-fragmented badge  
 **Rule:** the broad metadata zone is a search boundary; the smaller corner-anchor envelope is the automatic-selection boundary  
 **Rule:** a clearly non-anchored component must not compete with an anchored badge for auto-selection, but it remains recorded as evidence  
 **Rule:** detection may run without mutation for diagnostics/planning; destructive cleanup occurs only after the stage policy authorizes it  
@@ -97,16 +101,17 @@ Every replaceable provider should expose:
 
 ## S-06A Joint Border + Metadata Cleanup Planning
 **Domain service:** `JointCleanupPlanner`  
-**Input:** immutable source-transparency provenance + border geometry/contact evidence + metadata detection/mask evidence + frame geometry  
+**Input:** immutable source-transparency provenance + border geometry/contact evidence + complete metadata detection/mask evidence + frame geometry  
 **Output:** immutable `JointCleanupPlan` with status `SAFE_PLAN` or `REVIEW`  
 **Required evidence:** explained/unexplained contact ranges or fractions, combined planned deletion mask, planned removed-pixel count/ratio, reasons and confidence  
 **SAFE_PLAN rule:** all risky border contact must be explainable by approved metadata/corner geometry; any unexplained contact causes `REVIEW`  
 **SAFE_PLAN rule:** border and metadata evidence must each meet their automatic policy thresholds independently; the planner does not raise weak detector confidence  
+**SAFE_PLAN rule:** metadata mask completeness must be established; an unresolved fragment produced by analysis exclusion cannot authorize joint mutation  
 **Deletion scope rule:** the combined mask is bounded to approved spatial border bands plus approved metadata mask; no global color key is permitted  
 **Coordinate rule:** all evidence/masks are validated in one pre-cleanup frame coordinate space  
 **Mutation rule:** planner construction is non-destructive; applying a plan is a separate operation and may occur only for `SAFE_PLAN`  
 **Determinism rule:** deterministic inputs/configuration must produce the same plan mask/evidence hash  
-**Prohibited:** using joint planning to bypass source-transparency provenance, unexplained artwork contact, metadata ambiguity or configured safety bounds  
+**Prohibited:** using joint planning to bypass source-transparency provenance, unexplained artwork contact, metadata ambiguity, unresolved fragmentation or configured safety bounds  
 **Reference:** `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md` / ADR-028
 
 ## S-07 Transparent-Route Cleanup
@@ -158,7 +163,7 @@ Every replaceable provider should expose:
 **Input:** job/frame/stage outcomes  
 **Output:** machine-readable manifest + summary  
 **Invariant:** sufficient traceability to source/config/version  
-**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup evidence, joint-cleanup plan evidence when used, significant actions/findings, final output reference/hash
+**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup/exclusion evidence, joint-cleanup plan evidence when used, significant actions/findings, final output reference/hash
 
 ## Provider Registry / Factory
 Provider selection shall be resolved during job initialization from validated TOML configuration.
