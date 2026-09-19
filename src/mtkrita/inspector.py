@@ -3,11 +3,9 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
 from .models import FileInspection
-
 
 _CHUNK_SIZE = 1024 * 1024
 
@@ -36,11 +34,11 @@ def inspect_image(path: str | Path) -> FileInspection:
         transparent_ratio: float | None = None
 
         if has_alpha:
-            rgba = image.convert("RGBA")
-            alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
-            alpha_min = int(alpha.min())
-            alpha_max = int(alpha.max())
-            transparent_ratio = float(np.count_nonzero(alpha < 255) / alpha.size)
+            alpha = image.convert("RGBA").getchannel("A")
+            alpha_min, alpha_max = alpha.getextrema()
+            histogram = alpha.histogram()
+            pixel_count = width * height
+            transparent_ratio = float((pixel_count - histogram[255]) / pixel_count)
 
     after_hash = sha256_file(source)
     if before_hash != after_hash:
