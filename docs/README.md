@@ -56,6 +56,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
 - `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
+- `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md` — ADR-028 joint planning for border/metadata overlap
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
@@ -63,6 +64,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `17_PIPELINE_ENGINEERING_GUIDE.md`
 - `09_DATA_MODELS_AND_CONFIG.md`
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
+- `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`
 
 ## Quality / Verification / Traceability
 - `06_QA_RULEBOOK.md`
@@ -132,4 +134,5 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - ExecuteTask is immutable; worker results are candidates until durable MainBoard authority accepts them.
 - A worker never selects final output destination or bypasses ADR-024 artifact commitment.
 - M2 image-processing algorithms remain behind the headless pipeline/provider boundary; platform worker code adapts contracts and does not duplicate image policy.
+- Border/metadata overlap is detected independently but cleanup is planned jointly before destructive mutation (ADR-028 / `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`).
 - Critical code must be designed for headless automated testing with injectable/replaceable dependencies and permanent regression coverage for reproducible defects.
