@@ -41,6 +41,10 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
 - `44_PROVIDER_INTERFACE_ARCHITECTURE.md`
 - `45_TOML_CONFIGURATION_SPEC.md`
+- `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`
+- `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`
+- `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`
+- `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
@@ -92,3 +96,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - Python is the orchestration/control plane.
 - Depend on provider interfaces, not concrete engines.
 - TOML is the canonical configuration format.
+- All critical runtime paths go through PathManager/typed path references.
+- Workers compute in isolation; shared-state commit is centralized through MainBoard/ResourceBroker.
+- Batch and multi-worker execution must remain pauseable, resumable, recoverable and diagnosable.
+- Structured logs, checkpoints and durable state are first-class architecture requirements.
