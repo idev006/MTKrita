@@ -1,7 +1,7 @@
 # MTKrita Coding Standards and Repository Conventions
 
 ## Status
-SSOT — Engineering Conventions v1.0
+SSOT — Engineering Conventions v1.1
 
 ## Purpose
 กำหนดมาตรฐานร่วมสำหรับการพัฒนา MTKrita เพื่อให้ codebase maintainable, testable, headless-capable และสอดคล้องกับ document-driven architecture
@@ -64,6 +64,22 @@ Incremental migration from current flat modules is allowed when justified; do no
 - destructive actions require confidence/evidence
 - public stage operations should be deterministic unless documented otherwise
 - avoid in-place mutation of source image objects when practical
+- prefer explicit inputs/outputs over hidden environment/current-working-directory dependencies
+
+## Testability Rules
+Critical code must be designed so it can be tested headlessly and automatically.
+
+Required practices:
+- inject or replace provider/infrastructure dependencies where behavior depends on them
+- provide test seams for PathManager, JobStore, ResourceBroker, EventBus, Scheduler/WorkerManager boundary, clock/time source, ID generation and LogSink where applicable
+- do not instantiate hidden infrastructure dependencies deep inside domain/application logic
+- provider implementations must be testable through shared contract suites
+- side effects should be pushed toward infrastructure boundaries
+- filesystem tests use isolated temporary workspaces
+- tests must not depend on execution order or production directories
+- reproducible critical defects require regression tests
+
+Reference: `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`.
 
 ## Image Safety Rules
 - source files immutable
@@ -95,8 +111,10 @@ Never log file contents or secrets unnecessarily.
 Every defect fix requires a regression test when reproducible.
 Critical algorithm changes require:
 - unit/component tests
+- contract tests when provider/interface behavior changes
 - edge case tests
 - corpus/E2E evidence when destructive behavior can change
+- fault/recovery tests when state, worker, lease, checkpoint or commit behavior changes
 
 ## Static Quality
 CI must run at minimum:
@@ -129,6 +147,8 @@ A reviewer must verify:
 2. architecture layer correctness
 3. no silent destructive behavior
 4. tests match acceptance criteria
-5. source immutability
-6. traceability/evidence
-7. documentation synchronization
+5. code remains headless/testable where required
+6. dependencies are substitutable at approved seams
+7. source immutability
+8. traceability/evidence
+9. documentation synchronization
