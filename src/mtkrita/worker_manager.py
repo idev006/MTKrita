@@ -121,6 +121,18 @@ class WorkerManager:
         self._handles[worker_id].request_stop()
         return self._replace(current, state=WorkerState.STOPPING)
 
+    def mark_stopped(self, worker_id: str) -> WorkerRecord:
+        current = self.get(worker_id)
+        if current.state != WorkerState.STOPPING:
+            raise RuntimeError("worker can become STOPPED only from STOPPING")
+        return self._replace(
+            current,
+            state=WorkerState.STOPPED,
+            active_task_id=None,
+            active_attempt=None,
+            last_heartbeat_at=self._clock(),
+        )
+
     def refresh_process_state(self, worker_id: str) -> WorkerRecord:
         current = self.get(worker_id)
         if current.state in {WorkerState.STOPPED, WorkerState.LOST}:
