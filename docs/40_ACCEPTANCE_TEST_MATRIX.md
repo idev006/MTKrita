@@ -1,7 +1,7 @@
 # MTKrita Acceptance Test Matrix
 
 ## Status
-SSOT — Acceptance Verification Baseline v1.0
+SSOT — Acceptance Verification Baseline v1.1
 
 ## Purpose
 กำหนด objective acceptance tests สำหรับ capability สำคัญของ MTKrita เพื่อให้ทีมพัฒนาและ QA ใช้เกณฑ์เดียวกันก่อนปิด work package / milestone
@@ -44,7 +44,10 @@ SSOT — Acceptance Verification Baseline v1.0
 |---|---|---|
 | AT-ROUTE-001 | RGB no alpha | route background removal |
 | AT-ROUTE-002 | RGBA all alpha=255 | route background removal |
-| AT-ROUTE-003 | meaningful transparency | skip background removal |
+| AT-ROUTE-003 | meaningful source transparency | skip background removal |
+| AT-ROUTE-004 | opaque source + metadata cleanup creates alpha | still route background removal |
+| AT-ROUTE-005 | transparent source + metadata cleanup | preserve source-alpha route; no segmentation |
+| AT-ROUTE-006 | manifest provenance | records source transparency separately from cleanup/final alpha |
 | AT-BG-001 | opaque black connected background | transparent output |
 | AT-BG-002 | black hair/text inside foreground | preserved |
 | AT-BG-003 | light/white background | supported deterministic removal |
@@ -70,6 +73,7 @@ SSOT — Acceptance Verification Baseline v1.0
 | AT-EVID-001 | exported PNG | traces to source sheet/frame |
 | AT-EVID-002 | auto-fix | action + measurements recorded |
 | AT-EVID-003 | provider use | provider/config version recorded where applicable |
+| AT-EVID-004 | alpha provenance | source/cleanup/background-removal/final alpha provenance distinguishable |
 
 ## LINE / PNG Output
 | ID | Scenario | Expected |
@@ -97,7 +101,7 @@ SSOT — Acceptance Verification Baseline v1.0
 
 ## Milestone Gate Mapping
 ### M2
-Must pass AT-SPLIT, AT-BORDER, AT-META, AT-ROUTE, core AT-QUAL and AT-EVID for transparent corpus.
+Must pass AT-SPLIT, AT-BORDER, AT-META, AT-ROUTE, core AT-QUAL and AT-EVID for transparent corpus. AT-ROUTE-004 through AT-ROUTE-006 are mandatory provenance regressions.
 
 ### M3
 Must pass AT-BG and mixed transparent/opaque E2E with no Critical content-loss defect.
@@ -113,3 +117,5 @@ Must pass Windows clean-machine, regression/golden corpus, audit and release evi
 
 ## Release Rule
 A Critical requirement may not be declared complete without identifiable acceptance evidence linked to this matrix or a superseding SSOT revision.
+
+References: `DECISIONS.md` ADR-023, `27_END_TO_END_WORKFLOW_SPEC.md`, `35_INTERFACE_AND_STAGE_CONTRACTS.md`.
