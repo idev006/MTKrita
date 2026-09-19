@@ -27,7 +27,11 @@ class BorderDetection:
 
     @property
     def confidence(self) -> float:
-        values = [s.confidence for s in (self.left, self.top, self.right, self.bottom) if s]
+        values = [
+            side.confidence
+            for side in (self.left, self.top, self.right, self.bottom)
+            if side is not None
+        ]
         return mean(values) if values else 0.0
 
 
@@ -43,20 +47,27 @@ def _distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
     return max(abs(a[i] - b[i]) for i in range(3))
 
 
-def _dominant_color(pixels: list[tuple[int, int, int]], tolerance: int) -> tuple[tuple[int, int, int], float]:
+def _dominant_color(
+    pixels: list[tuple[int, int, int]],
+    tolerance: int,
+) -> tuple[tuple[int, int, int], float]:
     if not pixels:
         return (0, 0, 0), 0.0
     best_color = pixels[0]
     best_count = 0
     for candidate in pixels:
-        count = sum(_distance(candidate, p) <= tolerance for p in pixels)
+        count = sum(_distance(candidate, pixel) <= tolerance for pixel in pixels)
         if count > best_count:
             best_color = candidate
             best_count = count
     return best_color, best_count / len(pixels)
 
 
-def _strip_pixels(image: Image.Image, side: str, offset: int) -> list[tuple[int, int, int]]:
+def _strip_pixels(
+    image: Image.Image,
+    side: str,
+    offset: int,
+) -> list[tuple[int, int, int]]:
     px = image.load()
     if side == "top":
         return [_rgb(px[x, offset]) for x in range(image.width)]
@@ -77,14 +88,20 @@ def _detect_side(
     color_tolerance: int,
     min_coverage: float,
 ) -> BorderSide | None:
-    outer_color, outer_coverage = _dominant_color(_strip_pixels(image, side, 0), color_tolerance)
+    outer_color, outer_coverage = _dominant_color(
+        _strip_pixels(image, side, 0),
+        color_tolerance,
+    )
     if outer_coverage < min_coverage:
         return None
 
     coverages: list[float] = []
     thickness = 0
     for offset in range(max_thickness):
-        color, coverage = _dominant_color(_strip_pixels(image, side, offset), color_tolerance)
+        color, coverage = _dominant_color(
+            _strip_pixels(image, side, offset),
+            color_tolerance,
+        )
         if coverage < min_coverage or _distance(color, outer_color) > color_tolerance:
             break
         thickness += 1
@@ -92,7 +109,12 @@ def _detect_side(
 
     if thickness == 0:
         return None
-    return BorderSide(side=side, thickness=thickness, color=outer_color, confidence=mean(coverages))
+    return BorderSide(
+        side=side,
+        thickness=thickness,
+        color=outer_color,
+        confidence=mean(coverages),
+    )
 
 
 def detect_border(
@@ -104,13 +126,19 @@ def detect_border(
 ) -> BorderDetection:
     if not 0 < max_fraction <= 0.5:
         raise ValueError("max_fraction must be in (0, 0.5]")
+
     rgba = image.convert("RGBA")
     max_thickness = max(1, int(min(rgba.size) * max_fraction))
+    shared = {
+        "max_thickness": max_thickness,
+        "color_tolerance": color_tolerance,
+        "min_coverage": min_coverage,
+    }
     return BorderDetection(
-        left=_detect_side(rgba, "left", max_thickness=max_thickness, color_tolerance=color_tolerance, min_coverage=min_coverage),
-        top=_detect_side(rgba, "top", max_thickness=max_thickness, color_tolerance=color_tolerance, min_coverage=min_coverage),
-        right=_detect_side(rgba, "right", max_thickness=max_thickness, color_tolerance=color_tolerance, min_coverage=min_coverage),
-        bottom=_detect_side(rgba, "bottom", max_thickness=max_thickness, color_tolerance=color_tolerance, min_coverage=min_coverage),
+        left=_detect_side(rgba, "left", **shared),
+        top=_detect_side(rgba, "top", **shared),
+        right=_detect_side(rgba, "right", **shared),
+        bottom=_detect_side(rgba, "bottom", **shared),
     )
 
 
