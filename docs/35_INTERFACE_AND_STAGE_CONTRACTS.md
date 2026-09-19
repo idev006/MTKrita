@@ -1,7 +1,7 @@
 # MTKrita Interface and Stage Contracts
 
 ## Status
-SSOT — Stage Contract Baseline v1.8
+SSOT — Stage Contract Baseline v1.9
 
 ## Purpose
 กำหนด contract ของ critical pipeline stages เพื่อให้ orchestration, providers, tests และ QA อ้างอิง behavior เดียวกัน และรองรับ engine/provider replacement โดยไม่เปลี่ยน domain workflow
@@ -98,6 +98,8 @@ Every replaceable provider should expose:
 - there is exactly one dominant reconstructed anchored candidate; competing reconstructed groups cause `REVIEW`;
 - excluded pixels themselves are not copied into the metadata mask; overlap pixels remain the responsibility of the separately approved border mask;
 - the resulting detection is marked `requires_joint_cleanup=true` and must never be passed to standalone metadata removal.
+**Enclosed-interior completion rule:** a compact badge may contain visible interior pixels whose RGB resembles the transparent/opaque background (for example dark digits inside a light badge). Such pixels may be added to the metadata mask only when they form holes that are topologically fully enclosed by the approved badge support within its bounded component region. Open regions connected to the component exterior are never filled. For exclusion-fragmented badges, approved border-overlap pixels may be used as *analysis-only support* to establish enclosure, but those overlap pixels remain owned by the border mask and are not copied into the metadata mask.  
+**Interior-completion evidence:** completed-hole pixel count and whether border-overlap support was used must be recorded when nonzero.  
 **Review:** multiple plausible anchored candidates, insufficient dominance margin, implausible shape/area, metadata connected to unexplained artwork, unresolved exclusion fragmentation, or a raw topology group extending outside the anchor envelope  
 **Prohibited:** deleting arbitrary text/numbers merely because they occur inside the broad metadata zone  
 **Prohibited:** lowering global ambiguity thresholds to force a production case through automatic cleanup  
@@ -171,7 +173,7 @@ Every replaceable provider should expose:
 **Input:** job/frame/stage outcomes  
 **Output:** machine-readable manifest + summary  
 **Invariant:** sufficient traceability to source/config/version  
-**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup/exclusion/association evidence, joint-cleanup plan evidence when used, significant actions/findings, final output reference/hash
+**Required provenance:** extraction method/confidence, border side/offset/thickness/contact evidence, source transparency decision, metadata cleanup/exclusion/association/interior-completion evidence, joint-cleanup plan evidence when used, significant actions/findings, final output reference/hash
 
 ## Provider Registry / Factory
 Provider selection shall be resolved during job initialization from validated TOML configuration.
