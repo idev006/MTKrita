@@ -1,7 +1,7 @@
 # Sticker Sheet Specification
 
 ## Status
-SSOT — Sticker Sheet Geometry Baseline v1.1
+SSOT — Sticker Sheet Geometry Baseline v1.2
 
 ## Default Production Sheet
 
@@ -71,7 +71,11 @@ Every extracted frame must retain:
 ## Border Handling
 Sheet/frame borders are not sticker content. They may be removed only when confidence is high and contact-risk analysis does not indicate possible artwork loss.
 
-If artwork touches the border, same/near-border-color content continues into the inner boundary, or detection is otherwise ambiguous, the frame must be marked `REVIEW` rather than destructively cropped.
+A valid border may begin at the frame edge **or** after a bounded transparent/empty outer inset created by source scaling, rounded corners or sheet spacing. Border detection may search inward only inside an approved near-edge band and must retain the detected inset offset as evidence.
+
+Inset-border auto-removal requires stronger topology evidence than a single visible strip. At minimum, a fallback inset detector must use multi-side geometric/color consensus (or an equivalent conservative topology test) before it may classify a near-edge structure as a frame border. A single artwork strip must never be sufficient authority for destructive crop.
+
+If artwork or frame metadata touches the border, same/near-border-color content continues into the inner boundary, or detection is otherwise ambiguous, the frame must be marked `REVIEW` rather than destructively cropped. Detection of a border does not by itself authorize removal.
 
 ## Configuration Rule
 Human-maintained sheet configuration is TOML. YAML examples are not authoritative configuration for MTKrita.
