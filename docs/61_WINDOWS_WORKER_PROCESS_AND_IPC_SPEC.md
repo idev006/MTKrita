@@ -1,7 +1,7 @@
 # MTKrita Windows Worker Process and IPC Specification
 
 ## Status
-SSOT — Worker Runtime Architecture Baseline v1.1 — Spawn/Event Runtime Verified
+SSOT — Worker Runtime Architecture Baseline v1.2 — Spawn / ExecuteTask Transport Verified
 
 ## Purpose
 Define the concrete Windows worker-process boundary without coupling domain/pipeline logic to Python `multiprocessing`, UI technology, or a particular future transport.
@@ -23,12 +23,6 @@ Rules:
 - worker entrypoints must be top-level/importable functions suitable for frozen Windows applications;
 - process creation remains behind a factory/adapter interface so tests can use fake handles.
 
-## 3. Process Adapter Boundary
-
-The concrete runtime adapter shall satisfy the existing `WorkerHandle` contract and may extend it with transport lifecycle services.
-
-MainBoard/domain code must not directly call `multiprocessing.Process`, `Pipe`, `Queue`, or OS process primitives.
-
 Implemented layers:
 
 ```text
@@ -43,9 +37,9 @@ ProcessWorkerHandle + ProcessWorkerSession
 spawned worker_process_entrypoint
 ```
 
-The concrete factory currently uses `multiprocessing.get_context("spawn")`; that implementation detail remains confined to the adapter layer.
+The concrete factory uses `multiprocessing.get_context("spawn")`; that implementation detail remains confined to the adapter layer.
 
-## 4. IPC Principle
+## 3. IPC Principle
 
 Cross-process communication uses an explicit versioned wire schema.
 
@@ -59,9 +53,7 @@ Baseline wire format:
 - deterministic field names;
 - no executable code, callable, arbitrary module path, or arbitrary Python object in payload.
 
-This keeps the process boundary inspectable, testable and replaceable.
-
-## 5. Channel Direction
+## 4. Channel Direction
 
 Use logically separate channels:
 
@@ -72,11 +64,11 @@ Worker → MainBoard : EVENT/RESULT channel
 
 The current Windows adapter uses two unidirectional Pipe-style byte channels behind `JsonMessageSender` / `JsonMessageReceiver` and `ProcessWorkerSession`.
 
-Separate directions reduce accidental concurrent writes and simplify ownership rules. Parent-side session ownership includes both channel endpoints; deterministic close is required.
+Parent-side session ownership includes both channel endpoints; deterministic close is required.
 
-## 6. Required Wire Envelope
+## 5. Wire Envelope
 
-Minimum fields:
+Minimum envelope fields:
 
 ```text
 schema_version
@@ -95,65 +87,72 @@ attempt?
 payload
 ```
 
-The wire envelope maps to/from the application `MessageEnvelope`, but decoding must validate types and schema before publishing to MainBoard/EventBus.
+The wire envelope maps to/from `MessageEnvelope`, but decoding validates types/schema before MainBoard/EventBus publication.
 
-## 7. Initial Command Types
+## 6. Command Types
 
 Baseline commands:
 - `WorkerInitialize`
 - `ExecuteTask`
 - `StopWorker`
-- optional `PingWorker`
+- `PingWorker`
 
-`ExecuteTask` carries an immutable task descriptor generated from durable task metadata plus PathManager/ResourceBroker-approved private references. It must never carry arbitrary shared output paths for direct mutation.
+`ExecuteTask` is governed by ADR-026 and `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`.
 
-Current implementation status:
-- `WorkerInitialize` implemented;
-- `PingWorker` implemented;
-- `StopWorker` implemented;
-- `ExecuteTask` intentionally returns structured `WorkerInternalError` until the immutable task-executor/result contract is separately approved and implemented. The runtime must not pretend task execution support exists before that contract is present.
+Current implementation:
+- `WorkerInitialize` → `WorkerReady`;
+- `PingWorker` → `WorkerHeartbeat`;
+- `StopWorker` → `WorkerStopping` / `WorkerStopped`;
+- `ExecuteTask` payload is strictly parsed and identity/schema checked;
+- valid ExecuteTask emits `TaskStarted`;
+- until a concrete production `TaskExecutor` is injected, the baseline child emits structured `TaskFailed` with error code `WORKER.EXECUTOR_NOT_CONFIGURED` rather than pretending task success exists;
+- malformed ExecuteTask contracts emit structured `WorkerInternalError` and do not execute.
 
-## 8. Initial Event Types
+The ExecuteTask command never carries an authoritative final-output destination.
 
-Baseline worker events:
-- `WorkerReady`
-- `WorkerHeartbeat`
+## 7. Candidate Result Events
+
+Baseline task events:
 - `TaskStarted`
 - `TaskSucceededCandidate`
 - `TaskReviewCandidate`
 - `TaskFailed`
+
+Other runtime events:
+- `WorkerReady`
+- `WorkerHeartbeat`
 - `WorkerStopping`
 - `WorkerStopped`
 - `WorkerInternalError`
 
-A `TaskSucceededCandidate` is **not** durable success. MainBoard must validate attempt/lease/result and use the artifact commit protocol before task success is accepted.
+A `TaskSucceededCandidate` is **not** durable success. Candidate result payloads are versioned and validated through the task-result contract. Final success requires the MainBoard-owned candidate coordinator and ADR-024 artifact-commit protocol.
 
-### 8.1 Validated Event Routing
+## 8. Validated Event Routing
+
 Decoded worker events pass through `WorkerEventRouter` before WorkerManager mutation or EventBus publication.
 
 Rules:
 - event kind must be `EVENT`;
-- event type must be in the approved worker-event set;
+- event type must be approved;
 - worker identity is mandatory;
 - task-related events require the exact BUSY worker `task_id` + `attempt` identity;
 - BUSY heartbeat must carry the same task identity; idle heartbeat must not claim one;
 - `WorkerStopping` / `WorkerStopped` require authoritative STOPPING state;
-- `TaskSucceededCandidate` / `TaskReviewCandidate` / `TaskFailed` do not directly release the worker or mutate durable task success/failure state in the router.
+- task candidate events do not directly release the worker or mutate durable task outcome in the router.
 
-After validation/state update, events are published to the shared EventBus so existing structured logging and application subscribers observe the same validated event stream.
+After validation/state update, events are published to the shared EventBus for structured logging and application observers.
 
 ## 9. Heartbeat Contract
 
 Worker heartbeats:
 - originate in worker runtime;
 - include worker identity and current task/attempt when applicable;
-- are converted to validated MainBoard events;
 - update WorkerManager liveness only after validation;
-- do not renew durable task lease automatically unless lease policy explicitly authorizes that action.
+- do not renew durable task lease automatically unless explicit lease policy authorizes renewal.
 
-Heartbeat and task-lease renewal are related but separate decisions.
+Heartbeat and task-lease renewal remain separate decisions.
 
-`WorkerRuntimeController.ping()` copies the authoritative active task/attempt identity from WorkerManager when pinging a BUSY worker, preventing a heartbeat from inventing ownership data.
+`WorkerRuntimeController.ping()` copies the authoritative active task/attempt identity from WorkerManager when pinging a BUSY worker.
 
 ## 10. Stop and Termination
 
@@ -164,7 +163,7 @@ MainBoard/application service requests stop
   ↓
 WorkerManager enters STOPPING and ProcessWorkerHandle sends StopWorker
   ↓
-worker stops accepting new work
+worker reaches cooperative boundary
   ↓
 worker emits WorkerStopping / WorkerStopped
   ↓
@@ -174,20 +173,20 @@ WorkerManager enters STOPPED
   ↓
 WorkerRuntimeController waits for actual process exit
   ↓
-session endpoints may be closed
+session endpoints close
 ```
 
-Hard process termination is an escalation path for lost/unresponsive workers only. A killed worker's active task becomes interrupted/recoverable; it is never marked successful solely because the process exited.
+Hard termination is an escalation path for lost/unresponsive workers only. Process exit alone never implies task success.
 
 ## 11. Worker Resource Rules
 
 Worker may access:
-- immutable input references explicitly supplied to the task;
+- immutable input/resource references explicitly supplied by the approved task contract;
 - its PathManager-allocated private scratch directory;
 - provider-local memory/resources;
 - its IPC endpoints.
 
-Worker must not directly access/mutate:
+Worker must not directly mutate/access as authority:
 - JobStore;
 - final output namespace;
 - artifact commit journal;
@@ -196,85 +195,81 @@ Worker must not directly access/mutate:
 - another worker's scratch directory;
 - UI objects.
 
+Provisional result artifacts remain in worker-private scratch and are described by safe filename + SHA-256 + byte-size evidence only.
+
 ## 12. Message Validation
 
-Decoder rejects:
+Decoder/contract parser rejects:
 - unsupported schema version;
-- unknown required message kind;
+- unknown required message kind/type;
 - missing identity fields required by message type;
 - oversized messages;
 - malformed UTF-8/JSON;
 - invalid attempt/frame/task types;
 - inconsistent worker identity;
-- payload structures outside the expected JSON-compatible contract.
+- unexpected ExecuteTask/result payload fields;
+- unsafe provisional artifact names or invalid hashes/sizes.
 
-Malformed worker messages become structured transport/contract errors, not raw exceptions leaked into UI.
-
-`ProcessWorkerSession` additionally enforces command/event channel direction and validates event worker identity on receive.
+Malformed worker messages become structured transport/contract errors, not raw exceptions exposed to UI.
 
 ## 13. Backpressure
 
 IPC transport must not become an unbounded hidden queue.
 
 Requirements:
-- scheduler limits remain the primary task admission control;
-- transport send/receive behavior must have bounded or observable buffering;
-- MainBoard shall not dispatch additional work to BUSY/LOST/STOPPING workers;
-- result/event draining must continue while orderly stop is in progress where safe;
-- parent-side event receive supports explicit timeout rather than indefinite hidden blocking in control-plane orchestration.
+- scheduler limits remain primary task admission control;
+- MainBoard does not dispatch additional work to BUSY/LOST/STOPPING workers;
+- event draining continues while orderly stop is in progress where safe;
+- parent-side receive has explicit timeout rather than hidden indefinite blocking.
 
-## 14. Testability
+## 14. Testability and Current Evidence
 
-Required automated tests:
-- wire encode/decode round trip;
-- unsupported schema rejection;
-- malformed JSON/type rejection;
-- message-size limit rejection;
+Automated coverage includes:
+- JSON wire round trip / UTF-8 / malformed JSON/type / unsupported schema / message-size limit;
 - fake process-handle/session lifecycle;
 - command/event direction contract;
-- heartbeat event validation;
+- heartbeat identity validation;
 - graceful stop behavior;
-- worker crash maps to LOST/INTERRUPTED through existing watchdog policy;
-- real Windows spawn smoke test before release candidate;
-- frozen/packaged executable worker bootstrap test before production release.
+- worker loss through existing watchdog policy;
+- real Windows spawn smoke;
+- real Windows `ExecuteTask` transport smoke validating `TaskStarted → TaskFailed(WORKER.EXECUTOR_NOT_CONFIGURED)` while no concrete production executor exists;
+- ExecuteTask command builder and strict parser;
+- candidate result schema, provisional artifact safety and candidate authority tests;
+- platform integration test showing candidate success remains RUNNING until ADR-024 commit finalizes it.
 
-Verified in current platform track:
-- JSON wire contract tests;
-- fake WorkerManager/runtime lifecycle tests;
-- event identity/state validation tests;
-- real Windows runner spawn → initialize → ready → ping/heartbeat → graceful stop → process exit smoke test.
-
-Unit/component tests do not require real child processes unless the behavior specifically concerns OS process semantics.
+Frozen/packaged executable worker bootstrap remains required before production release.
 
 ## 15. Security and Safety
 
-- do not deserialize arbitrary pickle from a worker or external source as the authoritative IPC format;
+- no arbitrary pickle as authoritative IPC format;
 - no eval/exec/dynamic callable import from message payload;
-- reject arbitrary shared filesystem destinations;
-- validate all task/worker/attempt identities against durable MainBoard authority before commit;
-- treat worker process as fallible/untrusted relative to authoritative state;
+- no worker-selected final output destination;
+- all task/worker/attempt identities are validated against durable/control-plane authority before acceptance;
+- worker process is fallible/untrusted relative to authoritative state;
 - candidate result events do not constitute authoritative completion.
 
 ## 16. Packaging Constraints
 
-The concrete worker entrypoint is top-level/importable and designed for Windows spawn semantics. The selected standalone packager must preserve this bootstrap contract.
+The worker entrypoint is top-level/importable and designed for Windows spawn semantics. The selected standalone packager must preserve this bootstrap contract.
 
-Process spawn/bootstrap tests must be run against the packaged runtime before G3/G4 release gates. Source-tree CI success is necessary but not sufficient evidence for frozen executable behavior.
+Source-tree CI success is necessary but not sufficient; packaged-runtime spawn/bootstrap smoke testing remains mandatory before G3/G4.
 
-## 17. Implementation Sequence
+## 17. Implementation Status / Next Boundary
 
-Completed in current track:
-1. JSON wire codec behind explicit byte-channel protocols;
-2. in-memory/fake transport and lifecycle contract tests;
-3. Windows spawn `ProcessWorkerHandle` / `WindowsSpawnWorkerFactory` / `ProcessWorkerSession`;
-4. decoded event validation into WorkerManager + EventBus via `WorkerEventRouter`;
-5. real-process Windows source-tree CI smoke test;
-6. application-level `WorkerRuntimeController` for start/pump/ping/stop/close lifecycle.
+Completed:
+1. JSON wire codec and byte-channel contracts;
+2. fake transport/lifecycle tests;
+3. Windows spawn process/session adapter;
+4. WorkerEventRouter + WorkerRuntimeController;
+5. real-process Windows runtime smoke;
+6. immutable ExecuteTask command/result candidate schema per ADR-026;
+7. durable candidate result coordinator using existing ADR-024 commit path;
+8. component end-to-end authority-chain test.
 
 Next:
-1. define immutable `ExecuteTask` payload and worker task-executor interface;
-2. define/validate candidate result payloads and connect them to existing durable result/artifact-commit services;
-3. add dispatched-task → child process → candidate → authoritative commit integration test;
+1. connect a real MTKrita image-processing `TaskExecutor` implementation to the worker boundary;
+2. define the production durable task descriptor fields consumed by that executor without introducing arbitrary path/callable semantics;
+3. add real-process success integration once the M2 executor exists;
 4. add packaged/frozen executable worker bootstrap smoke test during distribution milestone.
 
 ## 18. Related SSOT
@@ -284,10 +279,9 @@ Next:
 - `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 - `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
 - `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md`
-- ADR-018, ADR-019, ADR-020, ADR-022, ADR-025
+- `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
+- ADR-018, ADR-019, ADR-020, ADR-022, ADR-024, ADR-025, ADR-026
 
-## 19. Verification Evidence
+## 19. Verification Rule
 
-Current Windows source-tree CI verifies that the spawned child process imports the top-level worker entrypoint and communicates only through the explicit JSON message layer for runtime commands/events. The worker process does not open JobStore, commit final artifacts, write the shared log, or mutate scheduler state.
-
-The platform shall retain PR #10 as draft until the ExecuteTask/result-candidate path is implemented or explicitly split into a later reviewed milestone.
+PR #10 remains draft until the platform foundation is reviewed against this runtime contract. A future image-processing executor may plug into `TaskExecutor`, but it may not bypass WorkerEventRouter, CandidateResultCoordinator, ResourceBroker, JobStore or ADR-024 artifact commitment.
