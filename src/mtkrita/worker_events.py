@@ -20,23 +20,27 @@ class RoutedWorkerEvent:
 class WorkerEventRouter:
     """Validate worker-originated events before state mutation or EventBus publication."""
 
-    _KNOWN_TYPES = {
-        "WorkerReady",
-        "WorkerHeartbeat",
-        "TaskStarted",
-        "TaskSucceededCandidate",
-        "TaskReviewCandidate",
-        "TaskFailed",
-        "WorkerStopping",
-        "WorkerStopped",
-        "WorkerInternalError",
-    }
-    _TASK_TYPES = {
-        "TaskStarted",
-        "TaskSucceededCandidate",
-        "TaskReviewCandidate",
-        "TaskFailed",
-    }
+    _KNOWN_TYPES = frozenset(
+        {
+            "WorkerReady",
+            "WorkerHeartbeat",
+            "TaskStarted",
+            "TaskSucceededCandidate",
+            "TaskReviewCandidate",
+            "TaskFailed",
+            "WorkerStopping",
+            "WorkerStopped",
+            "WorkerInternalError",
+        }
+    )
+    _TASK_TYPES = frozenset(
+        {
+            "TaskStarted",
+            "TaskSucceededCandidate",
+            "TaskReviewCandidate",
+            "TaskFailed",
+        }
+    )
 
     def __init__(self, *, workers: WorkerManager, events: InProcessEventBus) -> None:
         self._workers = workers
@@ -65,9 +69,11 @@ class WorkerEventRouter:
             if current.state != WorkerState.STOPPING:
                 raise WorkerEventError("WorkerStopped requires authoritative STOPPING state")
             current = self._workers.mark_stopped(message.worker_id)
-        elif message.message_type == "WorkerInternalError":
-            if message.task_id is not None or message.attempt is not None:
-                self._require_active_task_identity(current, message)
+        elif (
+            message.message_type == "WorkerInternalError"
+            and (message.task_id is not None or message.attempt is not None)
+        ):
+            self._require_active_task_identity(current, message)
 
         self._events.publish(message)
         return RoutedWorkerEvent(message=message, worker=current)
