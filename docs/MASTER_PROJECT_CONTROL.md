@@ -1,7 +1,7 @@
 # MTKrita Master Project Control
 
 ## Status
-SSOT — Project Control Baseline v1.6
+SSOT — Project Control Baseline v1.7
 
 ## Purpose
 เอกสารควบคุมระดับบนสุดของโครงการ MTKrita เชื่อม Vision → Goals → Objectives → Mandatory Workflow → Workstreams → Milestones → Quality Gates → Release Criteria และป้องกัน scope drift
@@ -33,6 +33,7 @@ MTKrita เป็น **Document-Driven Project with SSOT** และใช้ **
 - **G-12 Parallel Production** — รองรับ batch + multi-worker parallel execution โดย worker แยกกันและ shared-state commitment ถูกควบคุมจากส่วนกลาง
 - **G-13 Operational Resilience** — pause/stop/resume/retry/recover/checkpoint/log/diagnostic เป็น first-class system behavior
 - **G-14 Verification Readiness** — golden corpus, acceptance matrix, release sign-off และ operational runbook ต้องพร้อมก่อน milestone gate ที่เกี่ยวข้อง
+- **G-15 Automated Testability** — critical code ต้องออกแบบให้ทดสอบ headless/automated ได้ง่าย โดย dependencies สำคัญสามารถ substitute/inject ได้ และ critical defects ต้องกลายเป็น regression tests
 
 ## 3. Mandatory Minimum Objectives
 MVP ต้องพิสูจน์ได้ว่า:
@@ -53,6 +54,7 @@ MVP ต้องพิสูจน์ได้ว่า:
 15. system restart ต้อง reconcile incomplete work และสามารถ resume จาก safe checkpoint ได้
 16. structured logs + stable error codes + correlation identifiers ต้องเพียงพอสำหรับ diagnosis
 17. target milestone ต้องมี acceptance/golden-corpus evidence และ release/sign-off record ตาม gate
+18. critical features ต้องมี automated unit/contract/component/integration/regression tests ตามความเหมาะสม และ critical reliability paths ต้องรองรับ fault-injection/recovery tests
 
 ## 4. Mandatory End-to-End Workflow
 ```text
@@ -97,8 +99,10 @@ Authoritative workflow detail: `27_END_TO_END_WORKFLOW_SPEC.md`.
 - Shared-state commitment is serialized/transactional through MainBoard-owned services such as ResourceBroker/JobStore.
 - Worker result acceptance uses task attempt/lease identity; stale late results are rejected.
 - Durable checkpoints, startup reconciliation, structured logs and diagnostic evidence are architectural requirements.
+- Critical behavior must be headless-testable; provider/infrastructure dependencies use explicit replaceable seams where needed.
+- Hidden global mutable state and UI-only business logic are prohibited because they undermine testability and reuse.
 
-References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md` through `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`, ADR-015 through ADR-020.
+References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md` through `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`, ADR-015 through ADR-022.
 
 ## 6. Scope Boundaries
 ### Must-have before MVP release
@@ -142,7 +146,7 @@ Role competency/authority SSOT: `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`.
 ## 9. Quality Gates
 - **G0 Requirements Ready** — measurable scope + acceptance + risk
 - **G1 Design Ready** — architecture + workflow + interfaces + state/error strategy + testability
-- **G2 Verification Ready** — tests/static checks/non-destructive behavior + traceability
+- **G2 Verification Ready** — automated tests/static checks/non-destructive behavior + traceability
 - **G3 Release Candidate** — regression + golden corpus + Windows smoke + reliability/recovery evidence + docs/license review
 - **G4 Production Release** — final audit + reproducible artifacts + installer/portable validation
 
@@ -152,10 +156,10 @@ No milestone is complete solely because code exists; objective evidence is manda
 `Content Safety > Data/State Integrity > Mandatory MVP Contract > SSOT Compliance > Deterministic Correctness > Recoverability > LINE Compliance > Usability > Throughput > Advanced AI`
 
 ## 11. Change Control
-Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery, path/resource ownership, worker protocol, configuration schema or output contract require:
+Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery, path/resource ownership, worker protocol, configuration schema, test seams or output contract require:
 1. SSOT requirement/design review
 2. ADR if architectural
-3. regression/fault tests
+3. automated regression/fault tests
 4. traceability update
 5. changelog/evidence update
 6. QA review before release
@@ -170,6 +174,7 @@ Development teams begin with:
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
 - `40_ACCEPTANCE_TEST_MATRIX.md`
 - `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
+- `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
 - `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md`
 - `43_CURRENT_IMPLEMENTATION_STATUS_AND_KNOWN_GAPS.md`
 
