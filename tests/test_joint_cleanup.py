@@ -112,7 +112,7 @@ def test_missing_contact_localization_routes_review() -> None:
 
 
 def test_ambiguous_metadata_cannot_authorize_joint_cleanup() -> None:
-    image, border, metadata = _case()
+    image, border, _ = _case()
     ambiguous = MetadataDetection(
         bbox=None,
         confidence=0.90,
