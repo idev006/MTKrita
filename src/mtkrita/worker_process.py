@@ -6,6 +6,7 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 
 from .ipc import JsonMessageCodec, JsonMessageReceiver, JsonMessageSender, WireMessageError
+from .m2_builtin import build_builtin_task_executor
 from .messages import MessageEnvelope, MessageKind
 from .worker_tasks import (
     TaskCandidateResult,
@@ -226,33 +227,7 @@ def worker_process_entrypoint(
                 return
 
             if command.message_type == "ExecuteTask":
-                try:
-                    parse_execute_task(command)
-                except WorkerTaskContractError as exc:
-                    _send_internal_error(
-                        sender,
-                        worker_id=worker_id,
-                        causation=command,
-                        detail=f"invalid ExecuteTask contract: {exc}",
-                    )
-                    continue
-                sender.send(
-                    _worker_event(
-                        "TaskStarted",
-                        worker_id=worker_id,
-                        causation=command,
-                    )
-                )
-                sender.send(
-                    candidate_event(
-                        result=TaskCandidateResult(
-                            status=TaskCandidateStatus.FAILED,
-                            error_code="WORKER.EXECUTOR_NOT_CONFIGURED",
-                            error_message="No concrete task executor is connected to this worker runtime",
-                        ),
-                        causation=command,
-                    )
-                )
+                _handle_execute_task(sender, worker_id=worker_id, command=command)
                 continue
 
             _send_internal_error(
@@ -274,6 +249,50 @@ def worker_process_entrypoint(
     finally:
         command_connection.close()
         event_connection.close()
+
+
+def _handle_execute_task(
+    sender: JsonMessageSender,
+    *,
+    worker_id: str,
+    command: MessageEnvelope,
+) -> None:
+    try:
+        request = parse_execute_task(command)
+    except WorkerTaskContractError as exc:
+        _send_internal_error(
+            sender,
+            worker_id=worker_id,
+            causation=command,
+            detail=f"invalid ExecuteTask contract: {exc}",
+        )
+        return
+
+    sender.send(
+        _worker_event(
+            "TaskStarted",
+            worker_id=worker_id,
+            causation=command,
+        )
+    )
+    executor = build_builtin_task_executor(request)
+    if executor is None:
+        result = TaskCandidateResult(
+            status=TaskCandidateStatus.FAILED,
+            error_code="WORKER.EXECUTOR_NOT_CONFIGURED",
+            error_message="No built-in executor is registered for this task type",
+        )
+    else:
+        try:
+            result = executor.execute(request)
+        except Exception as exc:  # worker isolation boundary: never let one task kill the process
+            result = TaskCandidateResult(
+                status=TaskCandidateStatus.FAILED,
+                error_code="WORKER.EXECUTION_EXCEPTION",
+                error_message=f"Built-in executor failed with {type(exc).__name__}",
+            )
+
+    sender.send(candidate_event(result=result, causation=command))
 
 
 def _worker_event(
