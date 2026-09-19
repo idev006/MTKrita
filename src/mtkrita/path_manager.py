@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 
-_SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
+_SAFE_ID_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+)
 
 
 class PathKind(StrEnum):
@@ -29,8 +30,7 @@ class PathManager:
     """Resolve MTKrita-owned runtime paths from one trusted workspace root."""
 
     def __init__(self, workspace_root: str | Path) -> None:
-        root = Path(workspace_root).expanduser().resolve()
-        self._root = root
+        self._root = Path(workspace_root).expanduser().resolve()
 
     @property
     def workspace_root(self) -> Path:
@@ -38,9 +38,7 @@ class PathManager:
 
     @staticmethod
     def _validate_id(value: str, label: str) -> str:
-        if not value or not _SAFE_ID.fullmatch(value):
-            raise ValueError(f"invalid {label}")
-        if value in {".", ".."}:
+        if not value or value in {".", ".."} or any(ch not in _SAFE_ID_CHARS for ch in value):
             raise ValueError(f"invalid {label}")
         return value
 
