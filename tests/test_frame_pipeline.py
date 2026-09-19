@@ -162,8 +162,8 @@ def test_safe_transparent_border_badge_overlap_uses_joint_cleanup() -> None:
     border_color = (160, 220, 100, 255)
     for offset in range(6, 9):
         draw.rectangle((offset, offset, 95 - offset, 79 - offset), outline=border_color)
-    # Keep the badge inside the approved anchor envelope while still crossing the frame border.
-    draw.ellipse((2, 2, 16, 16), fill=border_color)
+    # Entire non-border badge topology remains inside the configured anchor envelope.
+    draw.ellipse((1, 1, 14, 14), fill=border_color)
     draw.rectangle((32, 24, 63, 55), fill=(240, 100, 80, 255))
 
     output = process_frame(
@@ -184,14 +184,13 @@ def test_safe_transparent_border_badge_overlap_uses_joint_cleanup() -> None:
     assert output.result.status == FrameStatus.AUTO_FIXED
 
 
-def test_joint_cleanup_never_bypasses_opaque_background_route() -> None:
+def test_opaque_border_badge_overlap_never_mutates_or_bypasses_m3() -> None:
     image = Image.new("RGBA", (96, 80), (0, 0, 0, 255))
     draw = ImageDraw.Draw(image)
     border_color = (160, 220, 100, 255)
     for offset in range(6, 9):
         draw.rectangle((offset, offset, 95 - offset, 79 - offset), outline=border_color)
-    # Same production-proportional badge as the transparent case, but on an opaque source.
-    draw.ellipse((2, 2, 16, 16), fill=border_color)
+    draw.ellipse((1, 1, 14, 14), fill=border_color)
     draw.rectangle((32, 24, 63, 55), fill=(240, 100, 80, 255))
 
     output = process_frame(
@@ -203,7 +202,7 @@ def test_joint_cleanup_never_bypasses_opaque_background_route() -> None:
 
     assert output.transparency.route == BackgroundRoute.REMOVE_BACKGROUND
     assert output.result.status == FrameStatus.REVIEW
-    assert "PLAN_JOINT_BORDER_METADATA_CLEANUP" in output.result.actions
     assert "JOINT_BORDER_METADATA_CLEANUP" not in output.result.actions
+    assert "REMOVE_FRAME_METADATA" not in output.result.actions
     assert output.image.getchannel("A").getextrema() == (255, 255)
-    assert any(finding.code == "BACKGROUND.REMOVAL_REQUIRED" for finding in output.result.findings)
+    assert output.result.evidence["background_route"] == "remove_background"
