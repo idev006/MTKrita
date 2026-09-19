@@ -10,9 +10,23 @@ def test_path_manager_builds_isolated_job_and_worker_paths(tmp_path: Path) -> No
 
     assert job.kind == PathKind.JOB_ROOT
     assert job.path.is_dir()
+    assert (job.path / "inputs").is_dir()
     assert worker.kind == PathKind.WORKER_SCRATCH
     assert worker.path.is_dir()
     assert worker.path.parent == job.path / "scratch"
+
+
+def test_input_path_is_typed_non_worker_owned_and_inside_job(tmp_path: Path) -> None:
+    manager = PathManager(tmp_path)
+    job = manager.prepare_job("job-123")
+
+    source = manager.input("job-123", "frame-001.png")
+
+    assert source.kind == PathKind.INPUT
+    assert source.worker_id is None
+    assert source.job_id == "job-123"
+    assert source.path == job.path / "inputs" / "frame-001.png"
+    assert manager.assert_owned(source.path) == source.path.resolve()
 
 
 def test_worker_file_preserves_typed_worker_ownership(tmp_path: Path) -> None:
@@ -55,12 +69,13 @@ def test_path_manager_rejects_traversal_and_external_paths(tmp_path: Path) -> No
         else:
             raise AssertionError("expected unsafe job id rejection")
 
-    try:
-        manager.output("job-1", "../outside.png")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("expected unsafe filename rejection")
+    for resolver in (manager.input, manager.output):
+        try:
+            resolver("job-1", "../outside.png")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("expected unsafe filename rejection")
 
     try:
         manager.assert_owned(tmp_path / "outside.txt")
