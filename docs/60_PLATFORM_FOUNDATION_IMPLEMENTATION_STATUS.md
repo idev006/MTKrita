@@ -13,6 +13,7 @@ PR #10 / branch `feat/platform-control-foundation`
 
 ### Durable authority and resources
 - typed `PathRef` / centralized `PathManager` with workspace ownership and worker-private scratch;
+- ADR-027 accepted: workers consume only control-plane-staged immutable inputs;
 - typed immutable job `INPUT` namespace under `jobs/<job_id>/inputs/`;
 - `ResourceBroker.stage_input_file()` copies external/control-plane source bytes into job input space without mutating the original source;
 - staged input uses overwrite refusal, flush/fsync, SHA-256, byte-size evidence and atomic promotion;
@@ -54,6 +55,7 @@ PR #10 / branch `feat/platform-control-foundation`
 
 ### ExecuteTask / immutable input / result candidate authority
 - ADR-026 accepted: ExecuteTask is immutable and worker results are candidates;
+- ADR-027 accepted: raw external paths never become worker input authority;
 - `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md` is the detailed task/result authority SSOT;
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md` defines staged immutable input and M2 mapping;
 - ExecuteTask payload version 2 carries explicit verified immutable `inputs[]` plus worker-private scratch;
@@ -150,4 +152,4 @@ This platform track remains intentionally separate from PR #9 so image-processin
 - `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
 - `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
-- ADR-017 through ADR-026
+- ADR-017 through ADR-027
