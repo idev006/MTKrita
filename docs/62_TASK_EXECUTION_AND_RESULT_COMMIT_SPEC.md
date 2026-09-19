@@ -1,16 +1,16 @@
 # MTKrita Task Execution and Candidate Result Commit Specification
 
 ## Status
-SSOT — Task Execution / Result Authority Baseline v1.0
+SSOT — Task Execution / Result Authority Baseline v1.1
 
 ## Purpose
-Define the control-plane boundary from an authoritative RUNNING task assignment through `ExecuteTask`, worker candidate events, and final durable outcome without allowing a worker or transport adapter to become a second source of truth.
+Define the control-plane boundary from an authoritative RUNNING task assignment through `ExecuteTask`, immutable staged input, worker candidate events, and final durable outcome without allowing a worker or transport adapter to become a second source of truth.
 
 ## 1. Governing Principle
 
 > Worker results are evidence candidates; only MainBoard-owned services can accept a durable outcome.
 
-This specification implements ADR-026 and reuses ADR-024 for successful artifact commitment.
+This specification implements ADR-026 and reuses ADR-024 for successful artifact commitment. Immutable input staging and M2 mapping are detailed in `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`.
 
 ## 2. ExecuteTask Authority
 
@@ -19,9 +19,27 @@ This specification implements ADR-026 and reuses ADR-024 for successful artifact
 - `worker_id` and positive `attempt` are present in that durable record;
 - the durable task descriptor belongs to the same `job_id` / `task_id`;
 - the descriptor is reconstructable and has a supported positive descriptor version;
-- worker scratch is allocated/resolved through PathManager.
+- worker scratch is allocated/resolved through PathManager;
+- any task input is reconstructed from a logical input identity through PathManager and verified before command creation.
 
 The worker command shall not contain an authoritative final-output destination.
+
+### 2.1 ExecuteTask Payload Version 2
+The current ExecuteTask payload version is 2. It contains:
+- `descriptor_version`;
+- immutable durable descriptor snapshot;
+- explicit `inputs[]` entries;
+- control-plane supplied worker-private `scratch_path`.
+
+Each input entry contains:
+- safe logical input name;
+- PathManager-resolved staged input path;
+- lowercase SHA-256;
+- byte size.
+
+A durable descriptor may name a logical input but must not contain an external absolute source path or final output path. `ExecuteTaskCommandBuilder` reconstructs the staged path from MainBoard-owned services and validates staged bytes before sending the command.
+
+Tasks with no input contract use `inputs=[]`; they do not gain permission to consume arbitrary paths from their descriptor.
 
 ## 3. Worker Task Executor Boundary
 
@@ -31,9 +49,12 @@ Input is an immutable `ExecuteTaskRequest` containing:
 - job/task/worker/attempt identity;
 - descriptor schema version;
 - immutable descriptor snapshot;
+- zero or more explicitly approved immutable staged input references;
 - control-plane supplied worker-private scratch path.
 
 The executor must not receive JobStore, scheduler, UI, artifact journal, final-output namespace authority, or arbitrary callable/module execution instructions.
+
+For M2 frame execution, the worker independently verifies the staged input file existence/hash/size before image processing so tampering or corruption after dispatch construction cannot silently pass.
 
 ## 4. Candidate Result Types
 
@@ -78,10 +99,12 @@ Zero or more-than-one artifacts in a success candidate are rejected as a contrac
 
 The worker never chooses the final target.
 
-A MainBoard-owned `CandidateTargetResolver` (or equivalent domain service) resolves the final `PathRef` from trusted durable context such as:
+A MainBoard-owned `CandidateTargetResolver` resolves the final `PathRef` from trusted durable context such as:
 - durable task descriptor;
 - export/profile rules;
 - stable frame/task identity.
+
+For M2, `M2FrameTargetResolver` validates the full durable M2 descriptor and resolves only its logical `output_name` through `PathManager.output(job_id, output_name)`.
 
 Resolver output must be a PathManager-owned OUTPUT or EVIDENCE `PathRef` for the same job.
 
@@ -158,7 +181,9 @@ The following must never produce durable success:
 - missing/expired runtime lease at acceptance time;
 - worker not BUSY on the exact task;
 - malformed candidate schema;
-- path traversal filename;
+- arbitrary input/output path in an M2 durable descriptor;
+- missing/tampered staged input;
+- path traversal provisional filename;
 - missing source file;
 - SHA-256 mismatch;
 - byte-size mismatch;
@@ -173,6 +198,9 @@ Rejected candidates may produce structured diagnostic/log evidence but must not 
 Required automated regression coverage:
 - valid one-artifact success commits through ADR-024 and only then reaches SUCCEEDED;
 - worker payload cannot select final target;
+- staged input is resolved by PathManager and validated before dispatch;
+- tampered staged input is rejected before M2 processing;
+- strict M2 descriptor rejects arbitrary path/unknown critical fields;
 - stale attempt and wrong worker rejected;
 - hash and byte-size mismatch rejected without success;
 - path traversal provisional filename rejected;
@@ -191,4 +219,5 @@ Required automated regression coverage:
 - `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`
 - `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 - `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
+- `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 - ADR-019, ADR-020, ADR-024, ADR-025, ADR-026
