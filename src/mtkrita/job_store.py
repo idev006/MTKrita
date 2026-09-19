@@ -302,7 +302,7 @@ class JobStore:
         descriptor_version: int = 1,
     ) -> TaskRecord:
         if not isinstance(priority, int):
-            raise ValueError("priority must be an integer")
+            raise TypeError("priority must be an integer")
         if descriptor_version <= 0:
             raise ValueError("descriptor_version must be positive")
         now = self._timestamp()
