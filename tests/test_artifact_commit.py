@@ -109,7 +109,7 @@ def test_recovery_finalizes_matching_file_after_crash_post_promotion(tmp_path: P
     assert finalized == ("commit-1",)
     assert journal.get("commit-1").state == "COMMITTED"
     assert jobs.get_task("task-1").state == "SUCCEEDED"
-    assert target.read_bytes() if False else True
+    assert target.path.read_bytes() == payload
 
 
 def test_recovery_marks_hash_mismatch_integrity_failure_without_task_success(tmp_path: Path) -> None:
