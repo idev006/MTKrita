@@ -285,7 +285,7 @@ def _handle_execute_task(
     else:
         try:
             result = executor.execute(request)
-        except Exception as exc:  # worker isolation boundary: never let one task kill the process
+        except (OSError, RuntimeError, ValueError) as exc:
             result = TaskCandidateResult(
                 status=TaskCandidateStatus.FAILED,
                 error_code="WORKER.EXECUTION_EXCEPTION",
