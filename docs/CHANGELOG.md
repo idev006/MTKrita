@@ -1,5 +1,21 @@
 # Documentation Changelog
 
+## v0.3 — 2026-09-19
+- Promoted supported input archetypes into main SSOT.
+- Added formal end-to-end workflow specification including happy, alternate, review and failure flows.
+- Added use case specification covering processing, review, resume/retry, export, transparent/opaque routing, border removal, metadata removal and 40-sticker batch flow.
+- Added UML system model with context, component, class, provider and package dependency diagrams.
+- Added sequence diagrams for main, transparent, opaque, review and recovery flows.
+- Added job/frame/stage state machine specification.
+- Added deployment and runtime architecture for Windows 11 standalone operation.
+- Added error, recovery and idempotency specification.
+- Added data flow and artifact lifecycle specification.
+- Added interface and stage contracts for all critical pipeline stages.
+- Added security and file safety model.
+- Added project team roles and competency model.
+- Strengthened Document-Driven SSOT rule: if important knowledge is not captured in approved SSOT, it is not yet project truth.
+- Updated documentation index, Master Project Control and requirements traceability to reference the behavioral model suite.
+
 ## v0.2 — 2026-09-19
 - Added project governance, virtual professional roles, RACI and quality gates.
 - Expanded product requirements with adaptive per-frame border detection/removal.
