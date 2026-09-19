@@ -1,7 +1,7 @@
 # MTKrita Master Project Control
 
 ## Status
-SSOT — Project Control Baseline v1.4
+SSOT — Project Control Baseline v1.5
 
 ## Purpose
 เอกสารควบคุมระดับบนสุดของโครงการ MTKrita เชื่อม Vision → Goals → Objectives → Mandatory Workflow → Workstreams → Milestones → Quality Gates → Release Criteria และป้องกัน scope drift
@@ -29,6 +29,9 @@ MTKrita เป็น **Document-Driven Project with SSOT** และใช้ **
 - **G-08 Developer Handoff Readiness** — ทีมพัฒนาต้องสามารถเริ่มงานจาก SSOT ได้โดยไม่ต้อง reconstruct intent จากบทสนทนา
 - **G-09 Interface-First Extensibility** — orchestrator/domain layer ต้องพึ่ง provider contracts ไม่พึ่ง concrete engine implementations
 - **G-10 Configuration Consistency** — TOML เป็น canonical human-maintained configuration format และ effective config ต้อง validate/hash ได้
+- **G-11 Centralized Resource Safety** — path และ shared mutable resource ต้องผ่าน PathManager/ResourceBroker แทนการเข้าถึงแบบกระจาย
+- **G-12 Parallel Production** — รองรับ batch + multi-worker parallel execution โดย worker แยกกันและ shared-state commitment ถูกควบคุมจากส่วนกลาง
+- **G-13 Operational Resilience** — pause/stop/resume/retry/recover/checkpoint/log/diagnostic เป็น first-class system behavior
 
 ## 3. Mandatory Minimum Objectives
 MVP ต้องพิสูจน์ได้ว่า:
@@ -44,6 +47,10 @@ MVP ต้องพิสูจน์ได้ว่า:
 10. job/frame lifecycle และ recovery behavior ต้องเป็นไปตาม state/recovery SSOT
 11. replaceable processing capabilities ต้องอยู่หลัง stable interfaces/provider contracts
 12. configuration ที่มีผลต่อ behavior ต้องถูก load/validate จาก TOML และบันทึก effective config hash
+13. critical runtime paths ต้องผ่าน PathManager/typed refs และ shared mutable resources ต้องถูก brokered
+14. batch/multi-worker execution ต้องป้องกัน stale/duplicate worker result จากการ overwrite authoritative state
+15. system restart ต้อง reconcile incomplete work และสามารถ resume จาก safe checkpoint ได้
+16. structured logs + stable error codes + correlation identifiers ต้องเพียงพอสำหรับ diagnosis
 
 ## 4. Mandatory End-to-End Workflow
 ```text
@@ -84,8 +91,14 @@ Authoritative workflow detail: `27_END_TO_END_WORKFLOW_SPEC.md`.
 - TOML is the canonical human-maintained configuration format.
 - Python 3.11+ uses `tomllib` for TOML read operations.
 - JSON remains acceptable for machine-generated manifests/evidence.
+- Runtime paths participating in the application contract are resolved through `PathManager` or typed path refs.
+- MainBoard/control-plane services coordinate jobs/workers/resources; MainBoard is not a monolithic God Object.
+- Workers perform isolated computation and may use only immutable inputs + private scratch; they do not mutate shared job state/final outputs directly.
+- Shared-state commitment is serialized/transactional through MainBoard-owned services such as ResourceBroker/JobStore.
+- worker result acceptance uses task attempt/lease identity; stale late results are rejected.
+- durable checkpoints, startup reconciliation, structured logs and diagnostic evidence are architectural requirements.
 
-References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md`, `45_TOML_CONFIGURATION_SPEC.md`, ADR-015 and ADR-016.
+References: `44_PROVIDER_INTERFACE_ARCHITECTURE.md` through `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`, ADR-015 through ADR-020.
 
 ## 6. Scope Boundaries
 ### Must-have before MVP release
@@ -122,27 +135,27 @@ Role competency/authority SSOT: `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`.
 - **M2 Transparent Processing Baseline — IN PROGRESS** — split + border + metadata + transparency routing + content/smart-fit + PNG validation
 - **M3 Opaque Processing Baseline** — background removal + REVIEW fallback + mixed corpus E2E
 - **M4 Desktop Beta** — drag/drop UI, exception-first review, preview, export
-- **M5 Production Automation** — 4 sheets/40 stickers, batch, resume/retry, ZIP/manifest
-- **M6 v1.0 Release Candidate** — regression/golden corpus, Windows packaging, audit evidence
+- **M5 Production Automation** — 4 sheets/40 stickers, batch, multi-worker, pause/resume/recovery, ZIP/manifest
+- **M6 v1.0 Release Candidate** — regression/golden corpus, Windows packaging, reliability fault-injection, audit evidence
 - **M7 v1.0 Production Release** — G4 approval and release artifacts
 
 ## 9. Quality Gates
 - **G0 Requirements Ready** — measurable scope + acceptance + risk
 - **G1 Design Ready** — architecture + workflow + interfaces + state/error strategy + testability
 - **G2 Verification Ready** — tests/static checks/non-destructive behavior + traceability
-- **G3 Release Candidate** — regression + golden corpus + Windows smoke + docs/license review
+- **G3 Release Candidate** — regression + golden corpus + Windows smoke + reliability/recovery evidence + docs/license review
 - **G4 Production Release** — final audit + reproducible artifacts + installer/portable validation
 
 No milestone is complete solely because code exists; objective evidence is mandatory.
 
 ## 10. Priority Rule
-`Content Safety > Mandatory MVP Contract > SSOT Compliance > Deterministic Correctness > LINE Compliance > Usability > Throughput > Advanced AI`
+`Content Safety > Data/State Integrity > Mandatory MVP Contract > SSOT Compliance > Deterministic Correctness > Recoverability > LINE Compliance > Usability > Throughput > Advanced AI`
 
 ## 11. Change Control
-Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery, configuration schema or output contract require:
+Changes affecting split/crop, border, metadata, alpha/background, quality, dimensions, destructive behavior, provider architecture, orchestration, state/recovery, path/resource ownership, worker protocol, configuration schema or output contract require:
 1. SSOT requirement/design review
 2. ADR if architectural
-3. regression tests
+3. regression/fault tests
 4. traceability update
 5. changelog/evidence update
 6. QA review before release
@@ -160,6 +173,10 @@ Changes affecting split/crop, border, metadata, alpha/background, quality, dimen
 - `36_SECURITY_AND_FILE_SAFETY_MODEL.md`
 - `44_PROVIDER_INTERFACE_ARCHITECTURE.md`
 - `45_TOML_CONFIGURATION_SPEC.md`
+- `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`
+- `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`
+- `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`
+- `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 
 ## 13. Developer Handoff SSOT
 Incoming development teams must begin with:
@@ -188,7 +205,7 @@ Incoming development teams must begin with:
 - `24_MVP_MINIMUM_FUNCTIONAL_BASELINE.md`
 - `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`
 - `26_PROJECT_TEAM_ROLES_AND_COMPETENCY_MODEL.md`
-- `27_END_TO_END_WORKFLOW_SPEC.md` through `45_TOML_CONFIGURATION_SPEC.md`
+- `27_END_TO_END_WORKFLOW_SPEC.md` through `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 - `DECISIONS.md`
 
 This document governs project direction; lower-level SSOT documents provide detailed behavior, design, execution and evidence rules.
