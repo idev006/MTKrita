@@ -3,13 +3,21 @@
 ## Test Objective
 พิสูจน์ว่า MTKrita ทำงานถูกต้อง ปลอดภัยต่อภาพต้นฉบับ ทำซ้ำได้ และไม่สร้างผลลัพธ์พร้อมขายเมื่อมีความเสี่ยงที่ยังไม่ได้รับการตรวจ
 
+## Testability Principle
+MTKrita must be designed for automated verification. Critical behavior must be testable headlessly without UI interaction. Infrastructure/provider dependencies should be injectable or replaceable where needed so unit, contract, integration, recovery and fault-injection tests can run deterministically.
+
+Reference: `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`.
+
 ## Test Pyramid
 1. Unit tests — algorithms and pure functions
-2. Component tests — detector/mask/fit/QA/export modules
-3. Golden-image regression — pixel/alpha/geometry comparisons
-4. End-to-end tests — full sheet to export package
-5. Exploratory/adversarial tests — unusual layouts and hostile image cases
-6. Installation tests — Windows 11 clean-machine scenarios
+2. Contract tests — provider/interface conformance
+3. Component tests — detector/mask/fit/QA/export modules
+4. Integration tests — orchestrator + MainBoard services/stores/broker/providers
+5. Golden-image regression — pixel/alpha/geometry comparisons
+6. End-to-end tests — full sheet to export package
+7. Fault-injection/recovery tests — worker loss, stale lease, interrupted commit, restart/resume
+8. Exploratory/adversarial tests — unusual layouts and hostile image cases
+9. Installation tests — Windows 11 clean-machine scenarios
 
 ## Critical Test Families
 
@@ -64,6 +72,31 @@ Assertions:
 - file size
 - count and naming
 
+### T-CONTRACT Provider Interfaces
+- shared provider contract suite
+- structured evidence/result
+- failure semantics
+- source immutability
+- cancellation/timeout behavior where applicable
+- no direct shared-state mutation
+
+### T-RECOVERY Reliability
+- worker termination during task
+- stale/duplicate worker results
+- interrupted final artifact commit
+- corrupted checkpoint
+- application restart during RUNNING
+- pause/resume and stop/resume
+- provider failure
+- resource rejection such as insufficient disk
+
+Assertions:
+- no false COMPLETED state
+- stale attempts rejected
+- valid checkpoints resume correctly
+- authoritative state remains consistent
+- diagnostic evidence available
+
 ## Golden Corpus
 Golden inputs and expected artifacts must be versioned separately from production source when licensing/privacy requires it. Each critical bug becomes a permanent regression case.
 
@@ -75,10 +108,22 @@ Use multiple metrics rather than only pixel equality:
 - edge distance metrics
 - perceptual similarity where resampling legitimately changes pixels
 
+## Test Isolation
+Automated tests must use isolated temporary workspaces, must not depend on current working directory or execution order, and must not write to production config/output locations. Parallel-capable tests must not share mutable state.
+
+## CI Baseline
+Pull-request CI runs at minimum:
+- Ruff/static checks
+- unit tests
+- contract/component tests
+- selected fast regression fixtures
+
+Promotion gates add golden corpus, E2E, recovery/fault-injection and Windows/package verification as appropriate.
+
 ## Severity
 - Critical: content loss, wrong frame, destructive source overwrite, false submission-ready result
 - Major: invalid transparency/export, materially wrong fit, major border remnants
 - Minor: cosmetic/report/UI issue without output corruption
 
 ## Exit Criteria
-No unresolved Critical defects; Major defects require explicit release waiver. All critical-path regression tests must pass on supported Windows 11 build target.
+No unresolved Critical defects; Major defects require explicit release waiver. All critical-path regression tests must pass on supported Windows 11 build target. Critical features must also meet the testability definition in `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`.
