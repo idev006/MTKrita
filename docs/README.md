@@ -10,8 +10,9 @@ For a new development team, begin with:
 6. `38_IMPLEMENTATION_BACKLOG_AND_WORK_BREAKDOWN.md` — actionable work packages
 7. `40_ACCEPTANCE_TEST_MATRIX.md` — acceptance evidence required
 8. `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md` — verification corpus requirements
-9. `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md` — coding/repository rules
-10. `58_SSOT_COVERAGE_AUDIT.md` — documentation readiness audit
+9. `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md` — testability/automation architecture
+10. `39_CODING_STANDARDS_AND_REPO_CONVENTIONS.md` — coding/repository rules
+11. `58_SSOT_COVERAGE_AUDIT.md` — documentation readiness audit
 
 ## SSOT Rule
 MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hierarchy defined in `25_DOCUMENT_DRIVEN_SSOT_OPERATING_MODEL.md`.
@@ -50,6 +51,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `48_BATCH_MULTIWORKER_EXECUTION_MODEL.md`
 - `49_RELIABILITY_RECOVERY_OBSERVABILITY_SPEC.md`
 - `51_REFERENCE_IMPLEMENTATION_BLUEPRINT.md`
+- `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
 
 ## Image Processing / Pipeline Engineering
 - `04_IMAGE_PROCESSING_PIPELINE.md`
@@ -67,6 +69,7 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - `40_ACCEPTANCE_TEST_MATRIX.md`
 - `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
 - `54_RELEASE_AND_SIGNOFF_CHECKLIST.md`
+- `59_TESTABILITY_AND_AUTOMATED_TEST_ARCHITECTURE.md`
 
 ## UX / Distribution / Audit
 - `16_UI_UX_SPECIFICATION.md`
@@ -113,3 +116,4 @@ MTKrita is a Document-Driven Project. When conflicts occur, follow the SSOT hier
 - Workers compute in isolation; shared-state commit is centralized through MainBoard/ResourceBroker.
 - Batch and multi-worker execution must remain pauseable, resumable, recoverable and diagnosable.
 - Structured logs, checkpoints and durable state are first-class architecture requirements.
+- Critical code must be designed for headless automated testing with injectable/replaceable dependencies and permanent regression coverage for reproducible defects.
