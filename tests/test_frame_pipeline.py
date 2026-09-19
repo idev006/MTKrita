@@ -31,7 +31,7 @@ def test_transparent_frame_runs_headless_to_autofixed_result() -> None:
     assert "SMART_FIT" in output.result.actions
 
 
-def test_opaque_frame_remains_opaque_route_after_metadata_cleanup() -> None:
+def test_opaque_frame_preserves_metadata_as_plan_for_m3_without_alpha_mutation() -> None:
     image = Image.new("RGB", (200, 160), (0, 0, 0))
     draw = ImageDraw.Draw(image)
     draw.ellipse((8, 8, 34, 34), fill=(180, 220, 120))
@@ -56,9 +56,10 @@ def test_opaque_frame_remains_opaque_route_after_metadata_cleanup() -> None:
     assert output.result.evidence["metadata_anchored_candidate_count"] == 1
     assert output.result.evidence["metadata_dominance_margin"] == 1.0
     assert output.result.extraction_method == "configured_scaled"
-    assert "REMOVE_FRAME_METADATA" in output.result.actions
+    assert "PLAN_FRAME_METADATA" in output.result.actions
+    assert "REMOVE_FRAME_METADATA" not in output.result.actions
     assert any(finding.code == "BACKGROUND.REMOVAL_REQUIRED" for finding in output.result.findings)
-    assert output.image.convert("RGBA").getchannel("A").getextrema()[0] == 0
+    assert output.image.convert("RGBA").getchannel("A").getextrema() == (255, 255)
 
 
 def test_ambiguous_metadata_routes_review_without_destructive_cleanup() -> None:
@@ -153,3 +154,54 @@ def test_inset_border_evidence_records_per_side_offset_and_thickness() -> None:
     assert sides["top"]["offset"] == 6
     assert output.result.evidence["border_contact_risk"] is False
     assert "REMOVE_BORDER" in output.result.actions
+
+
+def test_safe_transparent_border_badge_overlap_uses_joint_cleanup() -> None:
+    image = Image.new("RGBA", (96, 80), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    border_color = (160, 220, 100, 255)
+    for offset in range(6, 9):
+        draw.rectangle((offset, offset, 95 - offset, 79 - offset), outline=border_color)
+    draw.ellipse((3, 3, 21, 21), fill=border_color)
+    draw.rectangle((32, 24, 63, 55), fill=(240, 100, 80, 255))
+
+    output = process_frame(
+        image,
+        index=7,
+        row=1,
+        column=1,
+    )
+
+    assert output.transparency.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND
+    assert output.result.evidence["border_contact_risk"] is True
+    assert output.result.evidence["metadata_requires_joint_cleanup"] is True
+    assert output.result.evidence["metadata_fragment_association_resolved"] is True
+    assert output.result.evidence["joint_cleanup_status"] == "SAFE_PLAN"
+    assert output.result.evidence["joint_cleanup_unexplained_contact_fraction"] == 0.0
+    assert "JOINT_BORDER_METADATA_CLEANUP" in output.result.actions
+    assert not any(finding.code == "BORDER.CONTACT_RISK" for finding in output.result.findings)
+    assert output.result.status == FrameStatus.AUTO_FIXED
+
+
+def test_joint_cleanup_never_bypasses_opaque_background_route() -> None:
+    image = Image.new("RGBA", (96, 80), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(image)
+    border_color = (160, 220, 100, 255)
+    for offset in range(6, 9):
+        draw.rectangle((offset, offset, 95 - offset, 79 - offset), outline=border_color)
+    draw.ellipse((3, 3, 21, 21), fill=border_color)
+    draw.rectangle((32, 24, 63, 55), fill=(240, 100, 80, 255))
+
+    output = process_frame(
+        image,
+        index=8,
+        row=1,
+        column=2,
+    )
+
+    assert output.transparency.route == BackgroundRoute.REMOVE_BACKGROUND
+    assert output.result.status == FrameStatus.REVIEW
+    assert "PLAN_JOINT_BORDER_METADATA_CLEANUP" in output.result.actions
+    assert "JOINT_BORDER_METADATA_CLEANUP" not in output.result.actions
+    assert output.image.getchannel("A").getextrema() == (255, 255)
+    assert any(finding.code == "BACKGROUND.REMOVAL_REQUIRED" for finding in output.result.findings)

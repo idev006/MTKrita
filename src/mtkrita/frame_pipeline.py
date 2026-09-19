@@ -7,6 +7,13 @@ from PIL import Image
 from .border import BorderDetection, detect_border, remove_border
 from .content import analyze_alpha_content
 from .fit import fit_rgba_to_canvas
+from .joint_cleanup import (
+    JointCleanupPlan,
+    JointCleanupStatus,
+    apply_joint_cleanup,
+    build_border_cleanup_mask,
+    plan_joint_cleanup,
+)
 from .line_profile import validate_static_sticker
 from .metadata import MetadataDetection, detect_corner_metadata, remove_detected_metadata
 from .models import Finding, FrameResult, FrameStatus, ProcessingMode
@@ -82,6 +89,34 @@ def _metadata_evidence(detection: MetadataDetection) -> dict[str, object]:
         "metadata_compactness": detection.compactness,
         "metadata_anchor_distance": detection.anchor_distance,
         "metadata_dominance_margin": detection.dominance_margin,
+        "metadata_analysis_exclusion_applied": detection.analysis_exclusion_applied,
+        "metadata_analysis_excluded_pixel_count": detection.analysis_excluded_pixel_count,
+        "metadata_analysis_excluded_candidate_pixel_count": (
+            detection.analysis_excluded_candidate_pixel_count
+        ),
+        "metadata_analysis_exclusion_sha256": detection.analysis_exclusion_sha256,
+        "metadata_fragmented_by_exclusion": detection.fragmented_by_exclusion,
+        "metadata_fragment_association_applied": detection.fragment_association_applied,
+        "metadata_fragment_association_resolved": detection.fragment_association_resolved,
+        "metadata_associated_fragment_count": detection.associated_fragment_count,
+        "metadata_requires_joint_cleanup": detection.requires_joint_cleanup,
+        "metadata_enclosed_visible_hole_pixel_count": (
+            detection.enclosed_visible_hole_pixel_count
+        ),
+        "metadata_coordinate_space": detection.coordinate_space,
+    }
+
+
+def _joint_evidence(plan: JointCleanupPlan) -> dict[str, object]:
+    return {
+        "joint_cleanup_status": plan.status.value,
+        "joint_cleanup_explained_contact_fraction": plan.explained_contact_fraction,
+        "joint_cleanup_unexplained_contact_fraction": plan.unexplained_contact_fraction,
+        "joint_cleanup_planned_removed_pixel_count": plan.planned_removed_pixel_count,
+        "joint_cleanup_planned_removed_ratio": plan.planned_removed_ratio,
+        "joint_cleanup_confidence": plan.confidence,
+        "joint_cleanup_mask_sha256": plan.mask_sha256,
+        "joint_cleanup_reasons": plan.reasons,
     }
 
 
@@ -97,17 +132,18 @@ def _early_review(
     findings: list[Finding],
     actions: list[str],
     evidence: dict[str, object],
+    decision: TransparencyDecision | None = None,
 ) -> FramePipelineOutput:
-    decision = decide_source_background_route(working)
-    evidence.update(_route_evidence(decision))
+    resolved_decision = decision or decide_source_background_route(working)
+    evidence.update(_route_evidence(resolved_decision))
     mode = (
         ProcessingMode.TRANSPARENT
-        if decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND
+        if resolved_decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND
         else ProcessingMode.OPAQUE
     )
     return FramePipelineOutput(
         image=working,
-        transparency=decision,
+        transparency=resolved_decision,
         result=FrameResult(
             index=index,
             row=row,
@@ -141,30 +177,13 @@ def process_frame(
     actions: list[str] = []
     findings: list[Finding] = []
     evidence: dict[str, object] = {}
+    source_decision: TransparencyDecision | None = None
+    metadata_handled = False
 
     if cfg.remove_border:
         border = detect_border(working)
         evidence.update(_border_evidence(border))
         if border.detected:
-            if border.contact_risk:
-                findings.append(
-                    _finding(
-                        "BORDER.CONTACT_RISK",
-                        "Border may be connected to artwork or metadata; automatic crop refused",
-                    )
-                )
-                return _early_review(
-                    working,
-                    index=index,
-                    row=row,
-                    column=column,
-                    extraction_rect=extraction_rect,
-                    extraction_method=extraction_method,
-                    extraction_confidence=extraction_confidence,
-                    findings=findings,
-                    actions=actions,
-                    evidence=evidence,
-                )
             if border.confidence < cfg.border_auto_threshold:
                 findings.append(
                     _finding(
@@ -185,14 +204,88 @@ def process_frame(
                     actions=actions,
                     evidence=evidence,
                 )
-            working = remove_border(working, border, auto_threshold=cfg.border_auto_threshold)
-            actions.append("REMOVE_BORDER")
 
-    # ADR-023: capture source routing before metadata cleanup can create alpha.
-    source_decision = decide_source_background_route(working)
-    evidence.update(_route_evidence(source_decision))
+            if border.contact_risk:
+                # ADR-023: capture immutable source routing before joint cleanup can alter alpha.
+                source_decision = decide_source_background_route(working)
+                evidence.update(_route_evidence(source_decision))
+                if not cfg.remove_metadata:
+                    findings.append(
+                        _finding(
+                            "BORDER.CONTACT_RISK",
+                            "Border contact cannot be explained because metadata cleanup is disabled",
+                        )
+                    )
+                    return _early_review(
+                        working,
+                        index=index,
+                        row=row,
+                        column=column,
+                        extraction_rect=extraction_rect,
+                        extraction_method=extraction_method,
+                        extraction_confidence=extraction_confidence,
+                        findings=findings,
+                        actions=actions,
+                        evidence=evidence,
+                        decision=source_decision,
+                    )
 
-    if cfg.remove_metadata:
+                border_mask = build_border_cleanup_mask(working, border)
+                metadata = detect_corner_metadata(
+                    working,
+                    analysis_exclusion_mask=border_mask,
+                )
+                evidence.update(_metadata_evidence(metadata))
+                joint_plan = plan_joint_cleanup(
+                    working,
+                    border,
+                    metadata,
+                    border_auto_threshold=cfg.border_auto_threshold,
+                    metadata_auto_threshold=cfg.metadata_auto_threshold,
+                )
+                evidence.update(_joint_evidence(joint_plan))
+                if joint_plan.status != JointCleanupStatus.SAFE_PLAN:
+                    findings.append(
+                        _finding(
+                            "BORDER.CONTACT_RISK",
+                            "Border contact remains ambiguous after joint cleanup planning",
+                            reasons=joint_plan.reasons,
+                        )
+                    )
+                    return _early_review(
+                        working,
+                        index=index,
+                        row=row,
+                        column=column,
+                        extraction_rect=extraction_rect,
+                        extraction_method=extraction_method,
+                        extraction_confidence=extraction_confidence,
+                        findings=findings,
+                        actions=actions,
+                        evidence=evidence,
+                        decision=source_decision,
+                    )
+
+                metadata_handled = True
+                if source_decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND:
+                    working = apply_joint_cleanup(working, joint_plan)
+                    actions.append("JOINT_BORDER_METADATA_CLEANUP")
+                else:
+                    actions.append("PLAN_JOINT_BORDER_METADATA_CLEANUP")
+            else:
+                working = remove_border(
+                    working,
+                    border,
+                    auto_threshold=cfg.border_auto_threshold,
+                )
+                actions.append("REMOVE_BORDER")
+
+    if source_decision is None:
+        # ADR-023: capture source routing before metadata cleanup can create alpha.
+        source_decision = decide_source_background_route(working)
+        evidence.update(_route_evidence(source_decision))
+
+    if cfg.remove_metadata and not metadata_handled:
         metadata = detect_corner_metadata(working)
         evidence.update(_metadata_evidence(metadata))
         if metadata.mask is not None and metadata.bbox is not None:
@@ -204,11 +297,16 @@ def process_frame(
                         confidence=metadata.confidence,
                     )
                 )
-            else:
+            elif source_decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND:
                 working = remove_detected_metadata(
-                    working, metadata, auto_threshold=cfg.metadata_auto_threshold
+                    working,
+                    metadata,
+                    auto_threshold=cfg.metadata_auto_threshold,
                 )
                 actions.append("REMOVE_FRAME_METADATA")
+            else:
+                # Opaque route preserves the mask as evidence for future M3 composition.
+                actions.append("PLAN_FRAME_METADATA")
         elif "ambiguous" in metadata.reason.lower():
             findings.append(
                 _finding(
