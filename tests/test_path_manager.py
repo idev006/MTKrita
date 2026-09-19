@@ -15,6 +15,21 @@ def test_path_manager_builds_isolated_job_and_worker_paths(tmp_path: Path) -> No
     assert worker.path.parent == job.path / "scratch"
 
 
+def test_worker_file_preserves_typed_worker_ownership(tmp_path: Path) -> None:
+    manager = PathManager(tmp_path)
+    manager.prepare_job("job-123")
+    manager.prepare_worker_scratch("job-123", "worker-02")
+
+    candidate = manager.worker_file("job-123", "worker-02", "candidate.png")
+
+    assert candidate.kind == PathKind.WORKER_SCRATCH
+    assert candidate.worker_id == "worker-02"
+    assert candidate.job_id == "job-123"
+    assert candidate.path == (
+        tmp_path.resolve() / "jobs" / "job-123" / "scratch" / "worker-02" / "candidate.png"
+    )
+
+
 def test_output_evidence_and_log_resolve_inside_job(tmp_path: Path) -> None:
     manager = PathManager(tmp_path)
     manager.prepare_job("job-123")
