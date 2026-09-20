@@ -153,6 +153,7 @@ def test_inset_border_evidence_records_per_side_offset_and_thickness() -> None:
     assert sides["left"]["contact_ranges"] == ()
     assert sides["top"]["offset"] == 6
     assert output.result.evidence["border_contact_risk"] is False
+    assert output.result.evidence["border_consensus_mode"] == "single_tone"
     assert "REMOVE_BORDER" in output.result.actions
 
 
