@@ -1,10 +1,10 @@
 # MTKrita Platform Foundation Implementation Status
 
 ## Status
-SSOT — Platform Foundation Implementation Track v2.8
+SSOT — Platform Foundation Implementation Track v2.9
 
 ## Purpose
-Track implementation of the PathManager/MainBoard/ResourceBroker/multi-worker/control-plane architecture separately from image-algorithm maturity while reflecting the verified integration now maintained on PR #11.
+Track implementation of the PathManager/MainBoard/ResourceBroker/multi-worker/control-plane architecture separately from image-algorithm maturity while reflecting the verified integration maintained on PR #11.
 
 ## Current Tracks
 - PR #10 / `feat/platform-control-foundation` — platform/control-plane foundation
@@ -57,12 +57,11 @@ Track implementation of the PathManager/MainBoard/ResourceBroker/multi-worker/co
 - stale/malformed/hash-mismatch/size-mismatch/cross-job/multi-artifact candidates cannot create durable success.
 
 ## Verified M2 Integration on PR #11
-The platform-only integration gap has been closed on the stacked branch:
 - strict `M2FrameTaskDescriptor` schema;
 - MainBoard-owned `M2FrameTargetResolver`;
 - `M2FrameTaskExecutor` adapting the headless image pipeline behind injected seams;
 - static built-in `m2.frame` registration; task payload cannot choose module/callable/import path;
-- independent staged-input integrity verification inside worker execution;
+- staged-input integrity verification inside worker execution;
 - PASS/AUTO_FIXED → exactly one provisional scratch PNG candidate;
 - REVIEW → no false success artifact;
 - FAIL → structured task failure;
@@ -72,43 +71,50 @@ The platform-only integration gap has been closed on the stacked branch:
 Final output is not published merely because a worker produced a candidate; final publication remains MainBoard authority.
 
 ## Current Image-Pipeline Hardening Boundary
-PR #11 now contains verified Tier-B-oriented safety mechanisms while keeping policy in the image/domain layer:
-- inset decorative border discovery after transparent padding;
+PR #11 contains verified Tier-B-oriented safety mechanisms while keeping policy in the image/domain layer:
+- inset/rounded border discovery after transparent padding;
+- visible-support vs visible-color-purity evidence;
+- conservative four-side multi-tone fallback without widened global tolerance;
 - localized border contact ranges;
-- anchored metadata discrimination;
-- analysis-only border exclusion;
-- safe fragment association for one approved raw metadata topology group;
-- exact exclusion-mask identity binding to border evidence;
-- enclosed-visible-hole completion for dark numeral/detail pixels;
-- exclusion-aware confidence evidence without expanding deletion scope;
+- alpha-visible metadata topology for transparent inputs;
+- post-exclusion local metadata ownership and remote-artwork preservation;
+- exact exclusion-mask identity binding;
+- enclosed-visible-hole completion;
 - `JointCleanupPlanner` SAFE_PLAN/REVIEW contract;
-- transparent-source joint cleanup integrated in `FramePipeline` only for SAFE_PLAN;
+- bounded transparent-gutter separator refinement around configured grid predictions;
+- transparent-source joint cleanup only for SAFE_PLAN;
 - opaque-source cleanup remains plan-only pending M3.
 
 These capabilities do not grant platform workers independent business authority; workers still compute candidates only.
 
 ## CI / Verification Evidence
-Windows CI has passed Ruff + pytest for:
-- platform lifecycle/recovery;
-- durable artifact commit/crash reconciliation;
+Windows CI has passed Ruff + pytest for platform and M2 integration including:
+- lifecycle/recovery and durable artifact commit/crash reconciliation;
 - logging/diagnostics/scheduler/WorkerManager/dispatch/watchdog;
-- JobStore v3 migration and reconstruction;
+- JobStore v3 migration/reconstruction;
 - IPC codec and real Windows spawn;
 - ExecuteTask v2 and worker runtime;
-- immutable input staging and validation;
+- immutable input staging;
 - M2 descriptor/target/executor adapter;
-- CandidateResultCoordinator rejection/authority cases;
-- component authority E2E;
+- CandidateResultCoordinator authority/rejection cases;
 - real-process successful M2 E2E;
-- M2 regression suite including joint border/metadata safety.
+- joint border/metadata safety;
+- TB-001/TB-002 evidence and ownership refinements;
+- TB-003 transparent metadata topology;
+- TB-004 bounded separator refinement;
+- TB-005 conservative multi-tone four-side fallback.
 
-Toolchain modernization at commit `b23c9c6a6601bbbd0df0acc73976a723e943bfd0` is verified by Windows CI #320:
-- `actions/checkout@v7` PASS;
-- `actions/setup-python@v7` PASS;
-- Ruff PASS;
-- pytest PASS;
-- workflow token scope explicitly limited to `contents: read`;
-- known Pillow `Image.fromarray(..., mode=...)` deprecation warnings removed from joint cleanup.
+Recent checkpoints:
+- CI #324 — TB-002 PASS;
+- CI #328/#329 — TB-003 behavior/evidence PASS;
+- CI #330 — TB-004 PASS;
+- CI #333 — TB-005 PASS.
+
+Toolchain remains current:
+- `actions/checkout@v7`;
+- `actions/setup-python@v7`;
+- workflow token scope `contents: read`;
+- known Pillow joint-cleanup deprecation warning removed.
 
 ## Platform Known Gaps / Remaining Work
 1. packaged/frozen Windows executable `spawn` behavior still needs distribution-gate smoke testing;
@@ -128,8 +134,8 @@ These gaps block production release readiness but do not invalidate the verified
 - `REVIEW > destructive guess` remains mandatory.
 
 ## Immediate Next Work
-1. execute owner-approved Tier-B representative transparent corpus validation on the current PR #11 head;
-2. record per-frame evidence without committing private/source bytes;
+1. execute the final integrated Tier-B Candidate A/B run on the current PR #11 head;
+2. record per-frame extraction, border, metadata, joint-plan and output-inspection evidence without committing private/source bytes;
 3. close M2 acceptance only after Tier-B approval;
 4. begin M3 opaque-background implementation;
 5. later return to production schema freeze, packaged-runtime smoke and release hardening.
@@ -145,5 +151,8 @@ These gaps block production release readiness but do not invalidate the verified
 - `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
 - `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`
+- `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`
+- `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md`
+- `67_MULTITONE_BORDER_CONSENSUS_SPEC.md`
 - ADR-017 through ADR-028
 - PR #10, PR #11
