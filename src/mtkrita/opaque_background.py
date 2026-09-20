@@ -20,6 +20,7 @@ class OpaqueBackgroundPlan:
     status: OpaqueBackgroundStatus
     background_kind: str
     boundary_dark_fraction: float
+    perimeter_bridge_pixel_count: int
     hard_removed_pixel_count: int
     hard_removed_ratio: float
     fringe_adjusted_pixel_count: int
@@ -38,6 +39,19 @@ def _meaningful_transparency_ratio(image: Image.Image) -> float:
 
 def _boundary_samples(rgb: np.ndarray) -> np.ndarray:
     return np.concatenate((rgb[0, :, :], rgb[-1, :, :], rgb[:, 0, :], rgb[:, -1, :]), axis=0)
+
+
+def _perimeter_bridge(shape: tuple[int, int], depth: int) -> np.ndarray:
+    height, width = shape
+    bridge = np.zeros((height, width), dtype=bool)
+    if depth <= 0:
+        return bridge
+    bounded = min(depth, max(1, min(height, width) // 8))
+    bridge[:bounded, :] = True
+    bridge[-bounded:, :] = True
+    bridge[:, :bounded] = True
+    bridge[:, -bounded:] = True
+    return bridge
 
 
 def _edge_connected(mask: np.ndarray) -> np.ndarray:
@@ -65,14 +79,17 @@ def plan_opaque_background_removal(
     boundary_dark_fraction_threshold: float = 0.90,
     max_removed_ratio: float = 0.90,
     min_remaining_visible_ratio: float = 0.05,
+    perimeter_bridge_px: int = 12,
     fringe_radius: int = 2,
     fringe_max_value: int = 150,
     fringe_max_chroma: int = 55,
 ) -> OpaqueBackgroundPlan:
-    """Plan conservative edge-connected opaque-background removal.
+    """Plan conservative opaque-background and bounded frame-edge removal.
 
-    Only dark pixels connected to the image boundary gain hard-removal authority.
-    Enclosed dark artwork remains untouched.
+    Dark pixels gain automatic removal authority only through edge connectivity. A small
+    bounded perimeter bridge is also eligible after the outer boundary has proven to be
+    uniformly dark; this lets known sheet-frame decoration stop acting as an artificial
+    barrier around the real dark background while remaining spatially bounded.
     """
     if not 0 <= hard_dark_threshold <= 255:
         raise ValueError("hard_dark_threshold must be in [0, 255]")
@@ -82,6 +99,8 @@ def plan_opaque_background_removal(
         raise ValueError("max_removed_ratio must be in [0, 1]")
     if not 0 <= min_remaining_visible_ratio <= 1:
         raise ValueError("min_remaining_visible_ratio must be in [0, 1]")
+    if perimeter_bridge_px < 0:
+        raise ValueError("perimeter_bridge_px must be non-negative")
     if fringe_radius < 0:
         raise ValueError("fringe_radius must be non-negative")
 
@@ -91,6 +110,7 @@ def plan_opaque_background_removal(
             status=OpaqueBackgroundStatus.NOT_ELIGIBLE,
             background_kind="already_transparent",
             boundary_dark_fraction=0.0,
+            perimeter_bridge_pixel_count=0,
             hard_removed_pixel_count=0,
             hard_removed_ratio=0.0,
             fringe_adjusted_pixel_count=0,
@@ -115,6 +135,7 @@ def plan_opaque_background_removal(
             status=OpaqueBackgroundStatus.REVIEW,
             background_kind="unsupported_or_nonuniform_boundary",
             boundary_dark_fraction=boundary_dark_fraction,
+            perimeter_bridge_pixel_count=0,
             hard_removed_pixel_count=0,
             hard_removed_ratio=0.0,
             fringe_adjusted_pixel_count=0,
@@ -126,9 +147,11 @@ def plan_opaque_background_removal(
             alpha=None,
         )
 
-    hard_candidate = max_channel <= hard_dark_threshold
+    bridge = _perimeter_bridge((height, width), perimeter_bridge_px)
+    hard_candidate = (max_channel <= hard_dark_threshold) | bridge
     hard_background = _edge_connected(hard_candidate)
     removed_count = int(np.count_nonzero(hard_background))
+    bridge_count = int(np.count_nonzero(bridge & hard_background))
     removed_ratio = removed_count / total if total else 0.0
     remaining_count = total - removed_count
     remaining_ratio = remaining_count / total if total else 0.0
@@ -138,13 +161,13 @@ def plan_opaque_background_removal(
         reasons = ("no edge-connected dark background was proven",)
     elif removed_ratio > max_removed_ratio:
         status = OpaqueBackgroundStatus.REVIEW
-        reasons = ("proposed background removal exceeds safety ceiling",)
+        reasons = ("proposed background/frame removal exceeds safety ceiling",)
     elif remaining_ratio < min_remaining_visible_ratio:
         status = OpaqueBackgroundStatus.REVIEW
         reasons = ("too little visible foreground would remain after removal",)
     else:
         status = OpaqueBackgroundStatus.SAFE_REMOVE
-        reasons = ("edge-connected dark background is proven and bounded",)
+        reasons = ("dark background and bounded sheet-frame perimeter are proven and bounded",)
 
     alpha = np.full((height, width), 255, dtype=np.uint8)
     alpha[hard_background] = 0
@@ -168,12 +191,13 @@ def plan_opaque_background_removal(
         alpha[eligible_fringe] = np.minimum(alpha[eligible_fringe], scaled[eligible_fringe])
         fringe_count = int(np.count_nonzero(eligible_fringe))
 
-    alpha_image = Image.fromarray(alpha, mode="L") if status == OpaqueBackgroundStatus.SAFE_REMOVE else None
+    alpha_image = Image.fromarray(alpha) if status == OpaqueBackgroundStatus.SAFE_REMOVE else None
     transparency_ratio = float(np.mean(alpha <= 8)) if alpha_image is not None else 0.0
     return OpaqueBackgroundPlan(
         status=status,
-        background_kind="edge_connected_dark",
+        background_kind="edge_connected_dark_with_bounded_perimeter_bridge",
         boundary_dark_fraction=boundary_dark_fraction,
+        perimeter_bridge_pixel_count=bridge_count,
         hard_removed_pixel_count=removed_count,
         hard_removed_ratio=removed_ratio,
         fringe_adjusted_pixel_count=fringe_count,
