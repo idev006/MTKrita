@@ -37,6 +37,13 @@ def _meaningful_transparency_ratio(image: Image.Image) -> float:
     return float(np.mean(alpha <= 8))
 
 
+def _has_any_transparency(image: Image.Image) -> bool:
+    if "A" not in image.getbands():
+        return False
+    minimum, _ = image.getchannel("A").getextrema()
+    return minimum < 255
+
+
 def _boundary_samples(rgb: np.ndarray) -> np.ndarray:
     return np.concatenate((rgb[0, :, :], rgb[-1, :, :], rgb[:, 0, :], rgb[:, -1, :]), axis=0)
 
@@ -105,7 +112,7 @@ def plan_opaque_background_removal(
         raise ValueError("fringe_radius must be non-negative")
 
     source_transparency = _meaningful_transparency_ratio(image)
-    if source_transparency > 0.001:
+    if _has_any_transparency(image):
         return OpaqueBackgroundPlan(
             status=OpaqueBackgroundStatus.NOT_ELIGIBLE,
             background_kind="already_transparent",
@@ -118,7 +125,7 @@ def plan_opaque_background_removal(
             remaining_visible_ratio=1.0,
             transparency_ratio=source_transparency,
             mask_sha256=None,
-            reasons=("source already contains meaningful transparency",),
+            reasons=("source already contains alpha transparency",),
             alpha=None,
         )
 
