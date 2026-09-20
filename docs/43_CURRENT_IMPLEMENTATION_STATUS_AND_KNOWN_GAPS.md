@@ -1,7 +1,7 @@
 # MTKrita Current Implementation Status and Known Gaps
 
 ## Status
-SSOT — Engineering Implementation Status v2.1
+SSOT — Engineering Implementation Status v2.2
 
 ## Purpose
 แยกให้ชัดเจนระหว่างสิ่งที่อยู่ในเอกสาร สิ่งที่ implement แล้วจริง สิ่งที่ verify แล้วจริง และงานที่ยังเป็น release blocker เพื่อให้ทีมพัฒนารับช่วงต่อโดยไม่ต้องเดาจาก commit history
@@ -16,7 +16,7 @@ SSOT — Engineering Implementation Status v2.1
 New M2 production work shall continue on PR #11 until its gate is satisfied.
 
 ## Implemented and Verified — Platform / Runtime
-Windows CI currently verifies:
+Windows CI verifies:
 - centralized `PathManager` and typed path/resource ownership;
 - immutable staged INPUT namespace, SHA-256/size verification and source preservation;
 - `ResourceBroker`-controlled private scratch and final artifact promotion;
@@ -32,43 +32,47 @@ Windows CI currently verifies:
 
 ## Implemented and Verified — M2 Transparent Pipeline
 PR #11 now includes verified coverage for:
-- deterministic exact + controlled scaled 5×2 extraction with method/confidence evidence;
-- source transparency classification captured before any alpha-generating cleanup (ADR-023);
-- bounded inset-border discovery after transparent padding;
+- deterministic exact + controlled scaled 5×2 extraction;
+- bounded visual separator refinement (`configured_refined`) near predicted separators without resampling source pixels;
+- ADR-023 source transparency classification before alpha-generating cleanup;
+- rounded/inset border discovery after transparent padding;
+- visible-support vs visible-color-purity border evidence;
+- original edge/single-tone border consensus plus conservative four-side multi-tone fallback;
 - per-side border offset/thickness/color/confidence/contact evidence;
 - localized border-contact ranges and REVIEW-first contact safety;
 - anchored frame-number metadata detection with geometry/compactness/dominance evidence;
+- alpha-visible raw metadata topology for meaningfully transparent sources and RGB-background fallback for opaque sources;
 - analysis-only border exclusion without granting deletion authority;
-- safe fragment association when approved exclusion splits one raw metadata topology group;
-- exact exclusion-mask identity binding between associated metadata and border evidence;
-- enclosed-visible-hole completion for interior badge details such as dark numerals;
-- exclusion-aware shape-confidence evidence without expanding the deletion mask or lowering thresholds;
-- `JointCleanupPlanner` SAFE_PLAN/REVIEW contract with deterministic bounded mask/hash;
-- transparent-source joint border+metadata cleanup wired into `FramePipeline` only for SAFE_PLAN;
+- post-exclusion local ownership and safe fragment association;
+- exact exclusion-mask identity binding;
+- enclosed-visible-hole completion for dark numeral/detail pixels;
+- exclusion-aware shape confidence without expanding deletion scope or lowering thresholds;
+- `JointCleanupPlanner` SAFE_PLAN/REVIEW contract;
+- transparent-source joint border+metadata cleanup only for SAFE_PLAN;
 - opaque-source metadata/joint cleanup remains plan-only and does not create alpha before M3;
 - content analysis, no-upscale smart fit and LINE static validation;
 - atomic PNG scratch/export with SHA-256 and overwrite refusal;
 - `M2FrameTaskExecutor` behind the platform TaskExecutor boundary;
-- real Windows spawned-child M2 execution through candidate → MainBoard validation → ADR-024 final commit;
-- synthetic 10-frame E2E and regression suite.
+- real Windows spawned-child execution through candidate → MainBoard validation → ADR-024 final commit;
+- synthetic 10-frame E2E and permanent regression coverage.
 
 ## Tier-B Acceptance Boundary
-Issue #12 tracks production-like transparent corpus hardening without committing user/source image bytes.
+Issue #12 tracks production-like transparent corpus hardening without committing user/source bytes.
 
-The implementation blockers discovered from representative sheets have now been addressed in code and regression tests:
-- inset decorative border after transparent outer padding;
-- same/near-border-color inner-contact refusal;
-- metadata badge discrimination at the top-left anchor;
-- localized contact evidence;
-- joint border+metadata planning;
-- fragment association under approved exclusion;
-- exact border/exclusion identity validation;
-- interior dark-detail completion;
-- confidence preservation through analysis exclusion without threshold relaxation.
+Representative Candidate A/B have been hash-matched and inspected. Evidence-backed hardening TB-001 through TB-005 is now implemented and Windows-CI verified:
+- TB-001 rounded-border evidence quality;
+- TB-002 post-exclusion local metadata ownership;
+- TB-003 alpha-visible metadata topology for transparent sources;
+- TB-004 bounded visual separator refinement for shifted gutters;
+- TB-005 conservative four-side multi-tone border consensus.
 
-**Remaining M2 acceptance blocker:** run the current integrated head against the owner-approved Tier-B production/representative transparent corpus, record per-frame PASS/REVIEW/FAIL evidence, and confirm that no Critical silent-content-loss defect exists.
+Verified CI checkpoints include #324, #328, #329, #330 and #333; all passed Ruff + pytest. No safety threshold was relaxed to obtain these results.
 
-M2 shall not be declared complete from synthetic CI alone.
+Representative diagnostics show Candidate B extraction contamination is corrected by bounded separator refinement, and frames requiring different side tones can now enter the explicit multi-tone fallback while normal frames retain the original single-tone path.
+
+**Remaining M2 acceptance blocker:** execute the final integrated Tier-B run on the current PR #11 head, record per-frame PASS/REVIEW/FAIL plus extraction/border/metadata/joint evidence, inspect output for content loss/residue, and obtain owner acceptance.
+
+M2 shall not be declared complete from synthetic CI or isolated component diagnostics alone.
 
 ## M3 Opaque Route — Not Yet Production-Complete
 Remaining work:
@@ -99,25 +103,26 @@ Source-runtime Windows processing and spawned-child execution are verified. Pack
 Remaining distribution work includes packaged `spawn` smoke, installer/frozen-runtime selection, signing, release automation and final release evidence.
 
 ## Repository Hygiene / Toolchain State
-At the current PR #11 head:
+At the current PR #11 line:
 - root tree contains only project source/config/docs/tests/tooling;
-- no production/user Sticker Sheet bytes are committed for Tier-B diagnostics;
-- no generated PNG/ZIP/database/log/cache/temp/build artifacts are part of the PR;
-- `.gitignore` covers Python/test caches, environments, build/dist, logs and runtime `outputs/`/`jobs/` without hiding legitimate image/database fixtures globally;
-- GitHub Actions use current `actions/checkout@v7` and `actions/setup-python@v7` with `contents: read` least privilege;
-- Pillow `Image.fromarray(..., mode=...)` deprecation warnings in joint cleanup have been removed without behavior change;
-- Windows CI #320 at commit `b23c9c6a6601bbbd0df0acc73976a723e943bfd0` passed setup, Ruff and pytest.
+- production/user Tier-B source bytes are not committed;
+- generated PNG/ZIP/database/log/cache/temp/build artifacts are not intentionally part of the PR;
+- `.gitignore` covers Python/test caches, environments, build/dist, logs and runtime `outputs/`/`jobs/` without broad suppression of legitimate fixture types;
+- GitHub Actions use `actions/checkout@v7` and `actions/setup-python@v7` with `contents: read` least privilege;
+- known Pillow joint-cleanup deprecation warnings were removed without behavior change;
+- CI #333 passed Ruff + pytest for the latest TB-005 behavior checkpoint.
 
 ## Current Gate
-PR #11 remains draft because Tier-B transparent corpus acceptance is still open. `REVIEW > destructive guess` remains mandatory.
+PR #11 remains draft because final Tier-B transparent corpus acceptance is still open. `REVIEW > destructive guess` remains mandatory.
 
 ## Immediate Engineering Sequence
-1. run current PR #11 head against the owner-approved Tier-B representative transparent corpus;
-2. capture source hash, extraction provenance, border/metadata/joint evidence and per-frame result without committing private source bytes;
-3. fix only evidence-backed defects found by Tier-B, keeping thresholds and safety policy explicit;
-4. close M2 acceptance / Issue #2 when Tier-B evidence is approved;
-5. begin M3 opaque-background implementation;
-6. then advance UI/batch productization and Windows packaging/release milestones.
+1. run current PR #11 head against Candidate A/B through refined extraction and full frame pipeline;
+2. record extraction provenance, border consensus mode, metadata/joint evidence and per-frame result without committing source bytes;
+3. inspect generated provisional/final outputs for silent content loss, border/numeral residue and accidental artwork deletion;
+4. fix only evidence-backed defects;
+5. close Issue #12 and M2 / Issue #2 when Tier-B acceptance is approved;
+6. begin M3 opaque-background implementation;
+7. then advance UI/batch productization and Windows packaging/release milestones.
 
 ## Canonical References
 - `35_INTERFACE_AND_STAGE_CONTRACTS.md`
@@ -125,6 +130,9 @@ PR #11 remains draft because Tier-B transparent corpus acceptance is still open.
 - `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`
 - `60_PLATFORM_FOUNDATION_IMPLEMENTATION_STATUS.md`
 - `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`
+- `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`
+- `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md`
+- `67_MULTITONE_BORDER_CONSENSUS_SPEC.md`
 - `37_DEVELOPER_HANDOFF_PACKAGE.md`
 - `40_ACCEPTANCE_TEST_MATRIX.md`
 - `41_M2_M3_IMPLEMENTATION_PLAN.md`
