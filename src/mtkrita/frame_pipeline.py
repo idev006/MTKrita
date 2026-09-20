@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from PIL import Image
 
 from .border import BorderDetection, detect_border, remove_border
+from .contact_topology import BorderContactTopology, resolve_reciprocal_corner_contact
 from .content import analyze_alpha_content
 from .fit import fit_rgba_to_canvas
 from .joint_cleanup import (
@@ -54,12 +55,16 @@ def _route_evidence(decision: TransparencyDecision) -> dict[str, object]:
     }
 
 
-def _border_evidence(detection: BorderDetection) -> dict[str, object]:
+def _border_evidence(
+    detection: BorderDetection,
+    topology: BorderContactTopology | None = None,
+) -> dict[str, object]:
     sides: dict[str, object] = {}
     for name in ("left", "top", "right", "bottom"):
         side = getattr(detection, name)
         if side is None:
             continue
+        contact = topology.sides.get(name) if topology is not None else None
         sides[name] = {
             "offset": side.offset,
             "thickness": side.thickness,
@@ -68,6 +73,15 @@ def _border_evidence(detection: BorderDetection) -> dict[str, object]:
             "visible_support": side.visible_support,
             "color_purity": side.color_purity,
             "contact_risk": side.contact_risk,
+            "raw_contact_fraction": (
+                contact.raw_contact_fraction if contact is not None else side.contact_fraction
+            ),
+            "raw_contact_ranges": (
+                contact.raw_contact_ranges if contact is not None else side.contact_ranges
+            ),
+            "explained_corner_ranges": (
+                contact.explained_corner_ranges if contact is not None else ()
+            ),
             "contact_fraction": side.contact_fraction,
             "contact_ranges": side.contact_ranges,
         }
@@ -193,7 +207,9 @@ def process_frame(
 
     if cfg.remove_border:
         border = detect_border(working)
-        evidence.update(_border_evidence(border))
+        topology = resolve_reciprocal_corner_contact(working, border)
+        border = topology.detection
+        evidence.update(_border_evidence(border, topology))
         if border.requires_review:
             findings.append(
                 _finding(
