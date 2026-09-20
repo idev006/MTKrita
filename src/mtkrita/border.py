@@ -26,6 +26,7 @@ class BorderDetection:
     top: BorderSide | None
     right: BorderSide | None
     bottom: BorderSide | None
+    consensus_mode: str = "none"
 
     @property
     def detected(self) -> bool:
@@ -383,15 +384,13 @@ def _build_inset_side(
     )
 
 
-def _detect_inset_sides(
+def _candidate_map(
     image: Image.Image,
     *,
     max_search: int,
-    color_tolerance: int,
-    contact_fraction_threshold: float,
-) -> dict[str, BorderSide]:
-    search_tolerance = max(24, color_tolerance * 3)
-    candidates = {
+    search_tolerance: int,
+) -> dict[str, _InsetCandidate]:
+    return {
         side: candidate
         for side in ("left", "top", "right", "bottom")
         if (
@@ -406,13 +405,19 @@ def _detect_inset_sides(
         )
         is not None
     }
-    consensus = _consensus_candidates(candidates, consensus_tolerance=48)
-    if not consensus:
-        return {}
 
-    side_count = len(consensus)
+
+def _build_detected_sides(
+    image: Image.Image,
+    candidates: dict[str, _InsetCandidate],
+    *,
+    max_search: int,
+    search_tolerance: int,
+    contact_fraction_threshold: float,
+) -> dict[str, BorderSide]:
+    side_count = len(candidates)
     detected: dict[str, BorderSide] = {}
-    for side, candidate in consensus.items():
+    for side, candidate in candidates.items():
         result = _build_inset_side(
             image,
             candidate,
@@ -424,6 +429,51 @@ def _detect_inset_sides(
         if result is not None:
             detected[side] = result
     return detected
+
+
+def _detect_inset_sides(
+    image: Image.Image,
+    *,
+    max_search: int,
+    color_tolerance: int,
+    contact_fraction_threshold: float,
+) -> tuple[dict[str, BorderSide], str]:
+    search_tolerance = max(24, color_tolerance * 3)
+    candidates = _candidate_map(
+        image,
+        max_search=max_search,
+        search_tolerance=search_tolerance,
+    )
+    consensus = _consensus_candidates(candidates, consensus_tolerance=48)
+    if consensus:
+        detected = _build_detected_sides(
+            image,
+            consensus,
+            max_search=max_search,
+            search_tolerance=search_tolerance,
+            contact_fraction_threshold=contact_fraction_threshold,
+        )
+        if detected:
+            return detected, "single_tone"
+
+    if len(candidates) != 4:
+        return {}, "none"
+    if any(
+        candidate.visible_fraction < 0.75 or candidate.color_purity < 0.95
+        for candidate in candidates.values()
+    ):
+        return {}, "none"
+
+    detected = _build_detected_sides(
+        image,
+        candidates,
+        max_search=max_search,
+        search_tolerance=search_tolerance,
+        contact_fraction_threshold=contact_fraction_threshold,
+    )
+    if len(detected) != 4:
+        return {}, "none"
+    return detected, "multi_tone_four_side"
 
 
 def detect_border(
@@ -461,9 +511,10 @@ def detect_border(
             top=edge["top"],
             right=edge["right"],
             bottom=edge["bottom"],
+            consensus_mode="edge",
         )
 
-    inset = _detect_inset_sides(
+    inset, consensus_mode = _detect_inset_sides(
         rgba,
         max_search=max_thickness,
         color_tolerance=color_tolerance,
@@ -474,6 +525,7 @@ def detect_border(
         top=inset.get("top"),
         right=inset.get("right"),
         bottom=inset.get("bottom"),
+        consensus_mode=consensus_mode,
     )
 
 
