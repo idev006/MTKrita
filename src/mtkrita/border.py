@@ -6,6 +6,9 @@ from statistics import mean
 from PIL import Image
 
 
+_MULTITONE_MAX_THICKNESS_SPREAD_PX = 2
+
+
 @dataclass(frozen=True)
 class BorderSide:
     side: str
@@ -473,6 +476,11 @@ def _detect_inset_sides(
     )
     if len(detected) != 4:
         return {}, "none"
+
+    thicknesses = [side.thickness for side in detected.values()]
+    if max(thicknesses) - min(thicknesses) > _MULTITONE_MAX_THICKNESS_SPREAD_PX:
+        return {}, "none"
+
     return detected, "multi_tone_four_side"
 
 
