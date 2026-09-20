@@ -138,6 +138,7 @@ def test_inset_border_after_transparent_padding_is_detected_and_removed() -> Non
     detection = detect_border(image)
 
     assert detection.detected is True
+    assert detection.consensus_mode == "single_tone"
     assert detection.contact_risk is False
     assert detection.confidence >= 0.995
     for side in (detection.left, detection.top, detection.right, detection.bottom):
@@ -215,6 +216,17 @@ def test_three_side_multitone_geometry_cannot_authorize_fallback() -> None:
     assert detection.consensus_mode == "none"
 
 
+def test_multitone_fallback_rejects_insufficient_side_support() -> None:
+    image = _multitone_inset_frame()
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((5, 20, 10, 80), fill=(0, 0, 0, 0))
+
+    detection = detect_border(image)
+
+    assert detection.detected is False
+    assert detection.consensus_mode == "none"
+
+
 def test_multitone_fallback_preserves_contact_risk_gate() -> None:
     image = _multitone_inset_frame()
     draw = ImageDraw.Draw(image)
@@ -226,3 +238,13 @@ def test_multitone_fallback_preserves_contact_risk_gate() -> None:
     assert detection.left is not None
     assert detection.left.contact_risk is True
     assert detection.contact_risk is True
+
+
+def test_multitone_fallback_evidence_is_deterministic() -> None:
+    image = _multitone_inset_frame()
+
+    first = detect_border(image)
+    second = detect_border(image)
+
+    assert first.consensus_mode == "multi_tone_four_side"
+    assert first == second
