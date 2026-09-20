@@ -1,7 +1,7 @@
 # MTKrita Border Contact Topology and Complete Border-Band Ownership Specification
 
 ## Status
-SSOT Extension — Tier-B Border Contact Topology Contract v1.0
+SSOT Extension — Tier-B Border Contact Topology Contract v1.1
 
 ## Purpose
 Define TB-006: the evidence contract required to distinguish decorative-border continuation from real artwork contact after TB-005 has established conservative border geometry.
@@ -43,14 +43,14 @@ Each detected border side may expose contact intervals. TB-006 classifies those 
 
 ### Class A — Rounded-Corner Geometric Continuation
 A contact interval may be explained as rounded-corner continuation only when all conditions hold:
-1. the interval touches the low or high endpoint zone of the current side;
-2. the corresponding perpendicular adjacent side is detected and independently high-confidence;
-3. the perpendicular side geometry reaches the same corner in the same extracted frame;
-4. the explanation envelope is derived from detected border geometry, not from a broad fixed percentage of the frame;
-5. the interval does not extend beyond that bounded corner envelope into the central side region;
+1. the interval is fully contained in the bounded endpoint corner envelope of the current side;
+2. the corresponding perpendicular adjacent side is detected;
+3. that perpendicular side contains a reciprocal contact interval fully contained in its endpoint envelope for the same physical corner;
+4. both intervals come from already-authorized border sides in the same extracted frame;
+5. neither interval extends from the endpoint envelope into the central side region;
 6. deterministic repeat produces the same explanation.
 
-A corner explanation may reduce *unexplained* contact evidence, but it does not by itself expand the deletion/crop geometry.
+A corner explanation may reduce *unexplained* contact evidence, but it does not expand crop geometry, side thickness, color tolerance, or the border deletion mask.
 
 ### Class B — Adjacent Decorative Border-Band Continuation
 A long matching inner interval may indicate that the detected side captured only one tone/ring of a wider decorative border.
@@ -82,21 +82,38 @@ Examples include:
 - conflicting geometric evidence;
 - mixed contact where only part of the interval is explained.
 
-Any non-zero unexplained contact that still satisfies existing contact-risk policy continues to require REVIEW.
+Any unexplained contact whose fraction still meets the existing contact-risk threshold continues to require REVIEW.
 
-## Geometry-Derived Corner Envelope
-TB-006 SHALL NOT replace the current corner trimming with a broad arbitrary percentage.
+## Geometry-Derived Corner Envelope — Phase 1 Locked Rule
+TB-006 SHALL NOT replace the current contact-risk threshold or add a new broad frame-percentage trim.
 
-The corner envelope must be derived from border evidence available on the two sides meeting at a corner. Candidate inputs include:
-- each side offset;
-- each side thickness;
-- perpendicular side offset/thickness;
-- the intersection of their bounded side bands;
-- contiguous visible support around that intersection.
+For Phase 1, the corner envelope uses the border detector's **existing bounded inset search depth** (`max_search`) as its only spatial bound. This is already derived from the existing `max_fraction` border-search contract and therefore does not introduce a wider search domain.
 
-The first implementation should be conservative: explain only endpoint-localized ranges for which the adjacent perpendicular side demonstrably owns the corresponding corner. If exact ownership cannot be established, leave the interval unexplained.
+For a side of longitudinal length `L`:
+- low-end envelope: `[0, max_search)`;
+- high-end envelope: `[L - max_search, L)`.
 
-## Complete Border-Band Ownership
+A raw contact interval is eligible for corner explanation only when it is fully contained in one of those envelopes.
+
+Reciprocal-corner requirement:
+- top-low ↔ left-low;
+- top-high ↔ right-low;
+- bottom-low ↔ left-high;
+- bottom-high ↔ right-high.
+
+The interval on the current side and at least one raw contact interval on the reciprocal perpendicular side must both be fully contained in their corresponding endpoint envelopes for the same corner. One-sided endpoint evidence is not enough.
+
+Phase 1 SHALL preserve the raw contact evidence and separately record:
+- raw contact fraction/ranges;
+- corner-explained ranges;
+- residual/unexplained ranges;
+- residual/unexplained fraction.
+
+The existing contact-risk threshold is then applied to the **residual unexplained fraction**, not lowered or replaced. This permits proven corner geometry to stop contributing false risk while central or long unexplained contact still gates REVIEW.
+
+Phase 1 explicitly does **not** implement Class B band completion. Long strips that leave the endpoint envelope remain unexplained regardless of color similarity.
+
+## Complete Border-Band Ownership — Deferred Beyond Phase 1
 TB-006 may extend side thickness only through a dedicated band-completion planner. The current detected side is a seed, not permission to absorb arbitrary same-colored content.
 
 The planner must produce evidence before a wider band can be used:
@@ -116,20 +133,22 @@ Suggested statuses:
 - `REVIEW_ARTWORK_CONTACT`;
 - `REVIEW_GEOMETRY_CONFLICT`.
 
-The first implementation may support only a strict subset (for example, corner explanation without band completion). Unsupported cases must remain REVIEW rather than being forced through.
+Unsupported Class B cases remain REVIEW.
 
 ## Evidence Contract
-Frame-level evidence shall eventually include deterministic fields sufficient to audit the decision, for example:
-- `border_contact_total_fraction` per side (existing per-side contact remains canonical);
-- `border_contact_explained_corner_ranges`;
-- `border_contact_explained_band_ranges`;
-- `border_contact_metadata_ranges` or equivalent JointCleanupPlanner evidence;
-- `border_contact_unexplained_ranges`;
-- `border_contact_unexplained_fraction`;
-- `border_contact_topology_status`;
-- optional band-completion geometry/status when attempted.
+For each authorized inset border side, Phase 1 evidence shall preserve or expose:
+- `raw_contact_fraction`;
+- `raw_contact_ranges`;
+- `explained_corner_ranges`;
+- residual `contact_fraction` / `contact_ranges` as the canonical unexplained contact consumed by existing safety gates;
+- `contact_risk` computed from residual contact using the unchanged threshold.
 
-Names may be adjusted to fit existing models, but the semantic distinction between explained and unexplained contact is mandatory.
+Frame evidence shall propagate these fields inside existing per-side border evidence. Existing JointCleanupPlanner logic continues to consume residual `contact_fraction` / `contact_ranges`, so corner geometry cannot be double-counted as metadata ownership.
+
+Future band-completion evidence may add:
+- `border_contact_explained_band_ranges`;
+- `border_contact_topology_status`;
+- proposed/completed side-band geometry.
 
 ## Automatic Cleanup Authority
 TB-006 does not independently grant cleanup authority.
@@ -138,8 +157,8 @@ Automatic border cleanup remains allowed only when:
 1. border detection/consensus itself is authorized;
 2. border ambiguity is false;
 3. confidence remains at or above the existing automatic threshold;
-4. contact is either absent or completely explained by approved topology/metadata planning;
-5. any geometry completion has its own validated SAFE status;
+4. residual contact is absent/below existing risk threshold or is subsequently fully explained through approved metadata joint planning;
+5. any future geometry completion has its own validated SAFE status;
 6. no unexplained artwork contact remains.
 
 If any condition fails, return REVIEW.
@@ -147,53 +166,52 @@ If any condition fails, return REVIEW.
 ## Required Synthetic Regression Matrix
 Before/with production implementation, tests SHALL cover:
 
-1. **Rounded corner only**
-   - coherent rounded/inset border;
-   - inner matching contact exists only at both endpoints;
-   - perpendicular sides corroborate both corners;
-   - endpoint contact is classified as geometric continuation;
-   - no central contact remains.
+1. **Reciprocal rounded-corner contact**
+   - coherent inset border;
+   - raw inner contact exists only in endpoint envelopes on two perpendicular sides for the same corner;
+   - both reciprocal ranges are classified as corner continuation;
+   - raw evidence remains preserved;
+   - residual risk is recomputed with unchanged threshold.
 
 2. **Rounded corner plus central artwork contact**
-   - same border/corner geometry;
+   - reciprocal corner contact is present;
    - same-colored artwork touches the inner boundary in the central region;
-   - corner intervals may be explained;
-   - central interval remains unexplained and frame remains REVIEW.
+   - endpoint ranges may be explained;
+   - central interval remains residual and frame remains REVIEW.
 
-3. **Corner-like interval without perpendicular side**
-   - endpoint contact exists;
-   - adjacent side is absent/insufficient;
+3. **Corner-like interval without reciprocal perpendicular contact**
+   - endpoint contact exists on one side only;
    - interval remains unexplained; no false corner ownership.
 
-4. **Single long parallel continuation**
+4. **Endpoint interval crossing the search-domain boundary**
+   - contact begins in endpoint envelope but extends into central region;
+   - entire interval remains unexplained rather than being partially clipped/explained.
+
+5. **Single long parallel continuation**
    - one side has a long inner same/near-tone strip;
-   - no corroborating adjacent-side band evidence;
-   - must not authorize band completion; REVIEW.
+   - even if it includes an endpoint, it leaves the endpoint envelope;
+   - Phase 1 must not authorize band completion; REVIEW.
 
-5. **Corroborated wider decorative band**
-   - at least two adjacent sides contain coherent inward decorative continuation;
-   - proposed completion remains within bounded near-edge domain;
-   - completed inner boundary is clean;
-   - only then may a future SAFE_COMPLETE path be considered.
-
-6. **Decorative band plus artwork touch**
-   - otherwise coherent completed band;
-   - artwork touches the completed inner boundary;
-   - contact remains REVIEW.
-
-7. **Metadata adjacency**
-   - frame-number badge explains only its approved contact through JointCleanupPlanner;
+6. **Metadata adjacency**
+   - corner explanation removes only proven reciprocal endpoint intervals;
+   - frame-number badge ownership still requires JointCleanupPlanner;
    - remote/corner/artwork pixels are not pulled into metadata ownership.
 
-8. **No-border transparent artwork**
+7. **No-border transparent artwork**
    - no strong border evidence;
    - TB-006 must not create false REVIEW solely from arbitrary near-edge content.
 
-9. **Determinism**
-   - repeated runs on identical immutable input produce identical topology evidence/ranges/status.
+8. **Determinism**
+   - repeated runs on identical immutable input produce identical raw/explained/residual ranges and risk state.
 
-10. **Existing safety regressions**
+9. **Existing safety regressions**
    - TB-001 through TB-005, single-tone behavior, multi-tone ambiguity, and true artwork-contact tests remain unchanged unless SSOT explicitly supersedes them.
+
+10. **Future Class B tests (required before band completion is implemented)**
+   - corroborated wider decorative band;
+   - single-side long strip refusal;
+   - decorative band plus artwork touch refusal;
+   - completed inner boundary must be clean before SAFE_COMPLETE.
 
 ## Tier-B Acceptance Procedure
 After a TB-006 implementation checkpoint passes Windows Ruff + pytest:
@@ -201,12 +219,13 @@ After a TB-006 implementation checkpoint passes Windows Ruff + pytest:
 2. run refined extraction + full frame pipeline read-only;
 3. compare per-frame status against the previous 10 REVIEW / 10 REVIEW baseline;
 4. inspect every new PASS/AUTO_FIXED frame visually for border residue, content loss, numeral residue and accidental artwork deletion;
-5. record explained/unexplained contact evidence;
+5. record raw/explained/residual contact evidence;
 6. reject any change whose automation gain is obtained by threshold relaxation or unexplained deletion;
 7. keep M2 gate open until representative supported cases auto-process correctly and owner acceptance is obtained.
 
 ## Non-Goals
-TB-006 does not:
+TB-006 Phase 1 does not:
+- implement decorative-band completion;
 - implement M3 opaque-background removal;
 - redesign metadata ownership;
 - alter worker/MainBoard authority;
