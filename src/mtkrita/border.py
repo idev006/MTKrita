@@ -29,6 +29,11 @@ class BorderDetection:
     right: BorderSide | None
     bottom: BorderSide | None
     consensus_mode: str = "none"
+    review_reason: str | None = None
+
+    @property
+    def requires_review(self) -> bool:
+        return self.review_reason is not None
 
     @property
     def detected(self) -> bool:
@@ -439,7 +444,7 @@ def _detect_inset_sides(
     max_search: int,
     color_tolerance: int,
     contact_fraction_threshold: float,
-) -> tuple[dict[str, BorderSide], str]:
+) -> tuple[dict[str, BorderSide], str, str | None]:
     search_tolerance = max(24, color_tolerance * 3)
     candidates = _candidate_map(
         image,
@@ -456,15 +461,21 @@ def _detect_inset_sides(
             contact_fraction_threshold=contact_fraction_threshold,
         )
         if detected:
-            return detected, "single_tone"
+            return detected, "single_tone", None
 
     if len(candidates) != 4:
-        return {}, "none"
+        if len(candidates) >= 3:
+            return (
+                {},
+                "none",
+                f"multi-tone inset border has only {len(candidates)}/4 strong side candidates",
+            )
+        return {}, "none", None
     if any(
         candidate.visible_fraction < 0.75 or candidate.color_purity < 0.95
         for candidate in candidates.values()
     ):
-        return {}, "none"
+        return {}, "none", "four-side multi-tone candidate quality is insufficient"
 
     detected = _build_detected_sides(
         image,
@@ -474,13 +485,13 @@ def _detect_inset_sides(
         contact_fraction_threshold=contact_fraction_threshold,
     )
     if len(detected) != 4:
-        return {}, "none"
+        return {}, "none", "four-side multi-tone side construction is incomplete"
 
     thicknesses = [side.thickness for side in detected.values()]
     if max(thicknesses) - min(thicknesses) > _MULTITONE_MAX_THICKNESS_SPREAD_PX:
-        return {}, "none"
+        return {}, "none", "four-side multi-tone thickness geometry is incoherent"
 
-    return detected, "multi_tone_four_side"
+    return detected, "multi_tone_four_side", None
 
 
 def detect_border(
@@ -521,7 +532,7 @@ def detect_border(
             consensus_mode="edge",
         )
 
-    inset, consensus_mode = _detect_inset_sides(
+    inset, consensus_mode, review_reason = _detect_inset_sides(
         rgba,
         max_search=max_thickness,
         color_tolerance=color_tolerance,
@@ -533,6 +544,7 @@ def detect_border(
         right=inset.get("right"),
         bottom=inset.get("bottom"),
         consensus_mode=consensus_mode,
+        review_reason=review_reason,
     )
 
 
