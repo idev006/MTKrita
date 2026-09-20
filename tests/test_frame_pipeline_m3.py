@@ -25,7 +25,7 @@ def test_opaque_black_frame_becomes_transparent_and_continues_pipeline() -> None
     assert output.image.mode == "RGBA"
     assert output.image.getpixel((0, 0))[3] == 0
     assert output.image.getpixel((60, 50))[3] == 255
-    assert output.result.evidence["source_background_route"] == "REMOVE_BACKGROUND"
+    assert output.result.evidence["source_background_route"] == "remove_background"
     assert output.result.evidence["m3_background_status"] == "SAFE_REMOVE"
 
 
@@ -45,6 +45,30 @@ def test_m3_preserves_enclosed_black_detail() -> None:
 
     assert output.result.status == FrameStatus.AUTO_FIXED
     assert output.image.getpixel((60, 50))[3] == 255
+
+
+def test_opaque_sheet_style_frame_and_black_background_are_removed() -> None:
+    image = Image.new("RGB", (120, 100), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    ring = (160, 220, 100)
+    for offset in range(6, 10):
+        draw.rectangle((offset, offset, 119 - offset, 99 - offset), outline=ring)
+    draw.rounded_rectangle((25, 20, 95, 82), radius=8, fill=(255, 255, 255))
+    draw.rectangle((45, 40, 75, 65), fill=(220, 40, 80))
+    cfg = FramePipelineConfig(
+        target_size=(120, 100),
+        margin=0,
+        remove_border=True,
+        remove_metadata=False,
+    )
+
+    output = process_frame_with_m3(image, index=1, row=0, column=0, config=cfg)
+
+    assert output.result.status == FrameStatus.AUTO_FIXED
+    assert output.image.getpixel((0, 0))[3] == 0
+    assert output.image.getpixel((7, 7))[3] == 0
+    assert output.image.getpixel((60, 50))[3] == 255
+    assert "REMOVE_OPAQUE_BACKGROUND" in output.result.actions
 
 
 def test_unsupported_opaque_boundary_routes_review_without_mutation() -> None:
