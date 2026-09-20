@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from .exporter import export_png_atomic
-from .frame_pipeline import FramePipelineConfig, process_frame
+from .frame_pipeline import FramePipelineConfig
+from .frame_pipeline_m3 import process_frame_with_m3
 from .m2_executor import M2FrameTaskExecutor
 from .m2_task_descriptor import M2_FRAME_TASK_TYPE, M2PipelineConfigSnapshot
 from .worker_tasks import ExecuteTaskRequest, TaskExecutor
@@ -15,7 +16,7 @@ def build_builtin_task_executor(request: ExecuteTaskRequest) -> TaskExecutor | N
     if request.descriptor.get("task_type") != M2_FRAME_TASK_TYPE:
         return None
     return M2FrameTaskExecutor(
-        frame_processor=process_frame,
+        frame_processor=process_frame_with_m3,
         config_factory=build_frame_pipeline_config,
         png_writer=export_png_atomic,
     )
