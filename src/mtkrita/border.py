@@ -5,7 +5,6 @@ from statistics import mean
 
 from PIL import Image
 
-
 _MULTITONE_MAX_THICKNESS_SPREAD_PX = 2
 
 
