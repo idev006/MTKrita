@@ -40,6 +40,37 @@ def _inset_framed(
     return image
 
 
+def _multitone_inset_frame(
+    size: tuple[int, int] = (120, 100),
+    *,
+    inset: int = 6,
+    width: int = 3,
+    omit: str | None = None,
+) -> Image.Image:
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    colors = {
+        "left": (80, 210, 120, 255),
+        "top": (185, 235, 135, 255),
+        "right": (55, 130, 205, 255),
+        "bottom": (80, 95, 170, 255),
+    }
+    for offset in range(width):
+        left = inset + offset
+        top = inset + offset
+        right = size[0] - 1 - inset - offset
+        bottom = size[1] - 1 - inset - offset
+        if omit != "top":
+            draw.line((left, top, right, top), fill=colors["top"])
+        if omit != "bottom":
+            draw.line((left, bottom, right, bottom), fill=colors["bottom"])
+        if omit != "left":
+            draw.line((left, top, left, bottom), fill=colors["left"])
+        if omit != "right":
+            draw.line((right, top, right, bottom), fill=colors["right"])
+    return image
+
+
 def test_detects_different_border_colors_and_widths() -> None:
     green = _framed((80, 60), (180, 220, 80, 255), 3)
     black = _framed((80, 60), (12, 12, 12, 255), 7)
@@ -159,3 +190,39 @@ def test_inset_corner_geometry_is_not_reported_as_contact_range() -> None:
     assert detection.top is not None
     assert detection.left.contact_ranges == ()
     assert detection.top.contact_ranges == ()
+
+
+def test_four_side_multitone_inset_border_uses_conservative_fallback() -> None:
+    image = _multitone_inset_frame()
+
+    detection = detect_border(image)
+
+    assert detection.detected is True
+    assert detection.consensus_mode == "multi_tone_four_side"
+    assert detection.confidence >= 0.995
+    assert all(
+        side is not None
+        for side in (detection.left, detection.top, detection.right, detection.bottom)
+    )
+
+
+def test_three_side_multitone_geometry_cannot_authorize_fallback() -> None:
+    image = _multitone_inset_frame(omit="bottom")
+
+    detection = detect_border(image)
+
+    assert detection.detected is False
+    assert detection.consensus_mode == "none"
+
+
+def test_multitone_fallback_preserves_contact_risk_gate() -> None:
+    image = _multitone_inset_frame()
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((9, 30, 20, 55), fill=(80, 210, 120, 255))
+
+    detection = detect_border(image)
+
+    assert detection.consensus_mode == "multi_tone_four_side"
+    assert detection.left is not None
+    assert detection.left.contact_risk is True
+    assert detection.contact_risk is True
