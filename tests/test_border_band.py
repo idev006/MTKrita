@@ -1,7 +1,10 @@
 from PIL import Image, ImageDraw
 
 from mtkrita.border import BorderDetection, BorderSide
-from mtkrita.border_band import BorderBandCompletionStatus, plan_border_band_completion
+from mtkrita.border_band import (
+    BorderBandCompletionStatus,
+    plan_border_band_completion,
+)
 
 
 _COLOR = (40, 180, 90, 255)
