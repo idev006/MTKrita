@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .inspector import inspect_image
 from .manifest import create_manifest, write_manifest
+from .sheet_pipeline import process_sheet_file
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +21,15 @@ def build_parser() -> argparse.ArgumentParser:
     init_cmd = sub.add_parser("init-job", help="Create a job manifest for an input image")
     init_cmd.add_argument("input", type=Path)
     init_cmd.add_argument("--output", type=Path, required=True)
+
+    sheet_cmd = sub.add_parser(
+        "process-sheet",
+        help="Split a 2x5 sticker sheet, remove supported borders/background, and export frames",
+    )
+    sheet_cmd.add_argument("input", type=Path)
+    sheet_cmd.add_argument("--output", type=Path, required=True)
+    sheet_cmd.add_argument("--start-number", type=int, default=1)
+    sheet_cmd.add_argument("--overwrite", action="store_true")
 
     return parser
 
@@ -43,6 +53,16 @@ def main() -> int:
         target = write_manifest(manifest, args.output)
         print(target)
         return 0
+
+    if args.command == "process-sheet":
+        result = process_sheet_file(
+            args.input,
+            args.output,
+            start_number=args.start_number,
+            allow_overwrite=args.overwrite,
+        )
+        print(json.dumps(asdict(result.summary), ensure_ascii=False, indent=2))
+        return 0 if result.summary.review_count == 0 and result.summary.fail_count == 0 else 1
 
     return 2
 
