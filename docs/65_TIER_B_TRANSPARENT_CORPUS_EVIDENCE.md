@@ -1,13 +1,13 @@
 # MTKrita Tier-B Transparent Corpus Evidence
 
 ## Status
-Verification Evidence — Tier-B Transparent Corpus Diagnostic v1.1
+Verification Evidence — Tier-B Transparent Corpus Diagnostic v1.2
 
 ## Purpose
-Record production/representative transparent-sheet evidence without committing user/source image bytes. This document captures observed behavior of the current PR #11 detector/planner contracts and the evidence-backed hardening work required before M2 acceptance can close.
+Record production/representative transparent-sheet evidence without committing user/source image bytes. This document captures observed behavior of PR #11 and the evidence-backed hardening required before M2 acceptance closes.
 
 ## Corpus Identity
-Two owner-available representative transparent Sticker Sheets were matched exactly to the hashes already recorded in Issue #12.
+Two owner-available representative transparent Sticker Sheets are used as Tier-B evidence.
 
 ### Candidate A
 - logical name: `Thai-Inspired Blessings Sticker Sheet.png`
@@ -27,134 +27,99 @@ Two owner-available representative transparent Sticker Sheets were matched exact
 - meaningful source transparency: yes
 - source bytes: not committed
 
-## Extraction Evidence
-Both sheets use the known 5×2 layout but are not exactly divisible in width.
-
-Using the current controlled proportional extraction contract:
-- Candidate A frame widths: 397 / 397 / 398 / 397 / 397 px; frame height 396 px
-- Candidate B frame widths: 395 / 395 / 396 / 395 / 395 px; frame height 398 px
-- maximum cell-width variation: 1 px
-- extraction method: `configured_scaled`
-- nominal extraction confidence: 0.97
-
-The proportional geometry is deterministic, but the second Tier-B run shows that a low cell-width variation alone does **not** prove separator alignment against the rendered decorative frame. Candidate B frames 3–4 contain evidence of neighboring-frame pixels at the right crop boundary. This is now tracked separately as TB-004 rather than being misclassified as a border-detector failure.
-
-## Diagnostic Method
-The current PR #11 border, metadata and joint-planning contracts were reproduced in an isolated read-only harness against the exact Candidate A/B bytes. No source image was mutated and no corpus image was committed to the repository.
-
-This diagnostic is a hardening/evidence run, not owner acceptance and not a substitute for the final integrated acceptance run after the resulting defects are fixed.
-
-## Baseline Before TB-001 / TB-002
-Before the evidence refinements:
-
-### Candidate A
-- 10 frames inspected
-- 8 frames stopped at `BORDER.LOW_CONFIDENCE`
-- 2 frames passed the border threshold but metadata association remained unresolved
-- automatic destructive joint cleanup accepted: 0 / 10
-
-### Candidate B
-- 10 frames inspected
-- 2 frames stopped at `BORDER.LOW_CONFIDENCE`
-- 5 frames passed border threshold but metadata association remained unresolved
-- 3 frames isolated a joint-only candidate but metadata confidence was below threshold
-- automatic destructive joint cleanup accepted: 0 / 10
-
-The baseline failure mode was over-review, not silent destructive acceptance.
+## Safety Baseline
+The initial Tier-B diagnostic routed all 20 representative frames to REVIEW before destructive cleanup. No silent automatic deletion path was observed. The dominant defect class was over-review, so the hardening strategy is to improve evidence quality/topology while preserving thresholds and REVIEW-first behavior.
 
 ## Verified Hardening Checkpoints
 
 ### TB-001 — Rounded Border Evidence
-Implemented and Windows-CI verified:
+Implemented and Windows-CI verified.
 - visible support is separated from visible color purity;
-- transparent rounded corners no longer count as wrong-color pixels;
+- transparent rounded corners do not count as wrong-color pixels;
 - minimum support, multi-side consensus and contact-risk policy remain mandatory;
-- automatic threshold remains unchanged;
-- `visible_support` and `color_purity` are carried as evidence.
+- automatic threshold is unchanged;
+- `visible_support` and `color_purity` are evidence fields.
 
 ### TB-002 — Post-Exclusion Local Metadata Ownership
-Implemented and Windows-CI verified:
+Implemented and Windows-CI verified.
 - destructive ownership is based on post-exclusion local isolation rather than raw-group membership alone;
 - anchor center remains 60% of the metadata search zone;
-- local candidate extent may occupy up to 90% of the search zone while remaining locally bounded;
-- remote fragments separated only by the approved border exclusion are preserved and counted as evidence;
+- local candidate extent may occupy up to 90% of the search zone while remaining bounded;
+- remote fragments separated by the approved border exclusion are preserved and counted as evidence;
 - remote pixels never enter the metadata deletion mask;
 - selected components with a non-excluded path beyond the local envelope remain REVIEW;
-- `ignored_remote_fragment_count` is propagated into frame evidence.
+- `ignored_remote_fragment_count` is propagated.
 
 Windows CI #324 at commit `cd63c20b8b0f8f829481dcfc92555ce5e7254246` passed Ruff + pytest.
 
-## Second Tier-B Run After TB-001 / TB-002
+### TB-003 — Alpha-Visible Metadata Topology for Transparent Sources
+Implemented and Windows-CI verified.
+- meaningfully transparent metadata analysis uses `alpha_visible` topology as the primary raw support;
+- effectively opaque input retains `rgb_background_distance` fallback behavior;
+- alpha topology does not itself grant deletion authority;
+- anchor/local/dominance/exclusion/joint-planner rules remain mandatory;
+- `metadata_segmentation_basis` and alpha visibility threshold are propagated into frame evidence;
+- no automatic threshold was lowered.
 
-### Candidate A
-- border automatic-confidence gate: 10 / 10 frames pass
-- border contact risk localized: 10 / 10 frames
-- metadata candidate reaches current joint-planning eligibility: 4 / 10 frames
-- remaining metadata outcomes: unresolved local association and one ambiguity case
-- no threshold relaxation used
-- no silent destructive bypass observed
+Windows CI #328 and #329 passed Ruff + pytest for behavior and evidence propagation.
 
-### Candidate B
-- border automatic-confidence gate: 8 / 10 frames pass
-- the two border failures correspond to extraction-boundary contamination rather than proven border-evidence weakness
-- metadata candidates ready for current joint auto path: 0 / 10
-- several frames report no plausible metadata candidate with confidence around 0.60–0.64
-- remaining frames report unresolved local association
-- no threshold relaxation used
-- no silent destructive bypass observed
+Corpus effect after TB-003:
+- Candidate A metadata eligibility improved further (5 / 10 frames reached the current joint-planning candidate path during isolated diagnostic);
+- Candidate B remained constrained by other evidence defects, proving TB-003 should not be stretched beyond its intended responsibility.
 
-## Safety Finding
-The current implementation continues to fail closed. Ambiguous or incomplete evidence routes REVIEW. The observed blocker is now evidence quality and extraction fidelity, not an unsafe automatic-deletion path.
+### TB-004 — Bounded Visual Separator Refinement
+Implemented and Windows-CI verified.
+- configured proportional grid remains the deterministic initial hypothesis;
+- refinement searches only within ±16 px of predicted internal separators;
+- qualifying separators require strong transparent-gutter support;
+- if the prediction already lies inside a qualifying gutter, it remains unchanged;
+- absent/ambiguous separator evidence fails closed;
+- crop boundaries change only; source pixels are never resampled.
 
-## Tier-B Finding TB-003 — Transparent Metadata Segmentation Uses the Wrong Primary Background Evidence
-On a meaningfully transparent extracted frame, the current metadata detector still derives an RGB background reference from visible bottom/right edge pixels. In representative sheets those visible edge pixels can belong to the decorative green frame. That makes the border color behave like the inferred “background” and can merge or suppress the actual frame-number badge candidate even though alpha already provides direct foreground/background evidence.
+Windows CI #330 at commit `76359438bbfe2af0e8f2a8da4649308db204b21e` passed Ruff + pytest.
 
-Required refinement:
-- when meaningful transparency exists in the metadata analysis region/frame, visible alpha topology (`alpha > configured visibility threshold`) is the primary raw candidate support;
-- the approved border mask may still be excluded for connectivity analysis;
-- RGB distance-to-background remains a fallback for effectively opaque inputs, not the primary transparent-source segmentation mechanism;
-- source transparency provenance remains immutable and is captured before destructive cleanup;
-- alpha-visible segmentation does not grant deletion authority by itself; anchor, local extent, compactness, dominance, exclusion identity and joint-planner rules still apply;
-- automatic thresholds are not lowered.
+Representative evidence:
+- Candidate A: proportional separators are already close; one internal x separator refines by approximately -1 px, horizontal separator unchanged;
+- Candidate B: problematic x separators refine from approximately `1186 → 1174` and `1581 → 1576`; horizontal separator remains `398`;
+- the prior neighboring-frame contamination at Candidate B frame boundaries is therefore classified and addressed as extraction geometry rather than a border-detector defect.
 
-Required regression cases:
-1. transparent frame + inset green border + top-left badge while edge RGB is dominated by the border → badge remains detectable from alpha topology;
-2. transparent frame + non-anchored artwork in the broad zone → artwork is preserved and cannot become metadata merely because it is alpha-visible;
-3. opaque frame behavior continues to use conservative RGB/background evidence;
-4. analysis exclusion may separate border from badge, but excluded pixels remain border-owned.
+### TB-005 — Conservative Four-Side Multi-Tone Border Consensus
+Implemented and Windows-CI verified.
+- existing edge and single-tone inset paths remain primary;
+- multi-tone fallback is allowed only when all four sides independently provide strong near-edge border evidence;
+- each side keeps its own observed border color; no global color tolerance is widened;
+- three-side multi-tone evidence cannot authorize the fallback;
+- per-side contact-risk detection remains mandatory and can still force REVIEW;
+- `BorderDetection.consensus_mode` records `edge`, `single_tone`, `multi_tone_four_side`, or `none` at provider level.
 
-## Tier-B Finding TB-004 — Proportional Cell Geometry Does Not Prove Visual Separator Alignment
-Candidate B frames 3–4 show neighboring-frame pixels at the right crop edge even though proportional cell widths vary by only 1 px and satisfy the current deterministic scaled-grid check.
+Windows CI #333 at commit `d86862d05cf9ae4ddbbc4243c3d0eac657484535` passed Ruff + pytest, including multi-tone four-side success, three-side refusal, and contact-risk regression.
 
-Required refinement:
-- deterministic configured-scaled geometry remains an initial hypothesis, not sufficient final separator proof for production-like sheets;
-- extraction confidence must include separator/border alignment evidence when a visual frame structure exists;
-- a bounded refinement stage may search near the predicted separator for consistent transparent gutters / frame-border valleys / multi-row agreement;
-- refinement must remain deterministic and bounded around the configured prediction;
-- failure to establish separator alignment routes REVIEW rather than silently ingesting neighboring-frame pixels;
-- no source resampling is introduced by separator refinement.
+Representative diagnostic after refined extraction:
+- Candidate B frames requiring different side tones can now enter `multi_tone_four_side` rather than being rejected solely by cross-side color disagreement;
+- frames whose colors still satisfy the original consensus continue to use `single_tone`;
+- the fallback therefore supplements rather than replaces the original path.
 
-TB-004 must be implemented separately from metadata segmentation so extraction and metadata defects remain independently testable.
+## Remaining Tier-B Work
+M2 is substantially hardened but the Tier-B acceptance gate is not yet closed. Remaining work is now concentrated in final integrated corpus acceptance and any defects exposed by that run.
 
-## Mandatory New Regression Cases
-Before the next production behavior changes:
-1. transparent alpha-visible badge remains selectable even when visible edge RGB is border-colored;
-2. non-anchored alpha-visible artwork is never deleted as metadata;
-3. opaque metadata segmentation retains its conservative RGB fallback behavior;
-4. scaled 5×2 grid with visual separator shifted from proportional prediction is refined within a bounded search window;
-5. ambiguous separator evidence routes REVIEW;
-6. no threshold reduction from approved policy.
+Required closure run:
+1. execute the current integrated PR #11 head against Candidate A/B using the approved refined extraction path;
+2. record per-frame extraction, border consensus mode, metadata evidence, joint-cleanup evidence and PASS/REVIEW/FAIL;
+3. inspect outputs for silent content loss, edge damage, numeral residue, border residue and accidental artwork deletion;
+4. fix only evidence-backed defects and preserve REVIEW-first policy;
+5. obtain owner acceptance for the representative corpus result.
 
 ## Gate Status
-**M2 Tier-B: NOT YET ACCEPTED.**
+**M2 Tier-B: NOT YET ACCEPTED, but hardening implementation is near gate completion.**
 
-Reason: TB-001 and TB-002 are verified and materially improve Candidate A, but TB-003 metadata segmentation and TB-004 extraction alignment remain evidence-backed blockers. After those fixes, Candidate A/B must be rerun and owner acceptance evidence recorded.
+TB-001 through TB-005 are implemented and regression-verified. The remaining blocker is the final integrated Tier-B acceptance/evidence pass, not a known unbounded destructive path.
 
 ## Repository Safety
 - candidate source bytes remain outside Git history;
 - only hashes, dimensions, aggregate measurements and defect evidence are versioned by default;
 - temporary diagnostic outputs remain outside tracked runtime/source directories;
 - no production threshold is changed without SSOT + regression evidence;
-- corpus diagnostics are read-only.
+- corpus diagnostics are read-only;
+- no generated PNG/ZIP/database/log/cache/temp/build artifacts are intentionally committed.
 
-References: `35_INTERFACE_AND_STAGE_CONTRACTS.md`, `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`, `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`, ADR-023, ADR-028, Issue #12, PR #11.
+References: `35_INTERFACE_AND_STAGE_CONTRACTS.md`, `52_TEST_DATA_AND_GOLDEN_CORPUS_SPEC.md`, `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`, `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md`, `67_MULTITONE_BORDER_CONSENSUS_SPEC.md`, ADR-023, ADR-028, Issue #12, PR #11.
