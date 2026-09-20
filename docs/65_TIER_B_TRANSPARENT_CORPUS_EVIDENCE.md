@@ -1,7 +1,7 @@
 # MTKrita Tier-B Transparent Corpus Evidence
 
 ## Status
-Verification Evidence — Tier-B Transparent Corpus Diagnostic v1.2
+Verification Evidence — Tier-B Transparent Corpus Diagnostic v1.3
 
 ## Purpose
 Record production/representative transparent-sheet evidence without committing user/source image bytes. This document captures observed behavior of PR #11 and the evidence-backed hardening required before M2 acceptance closes.
@@ -89,10 +89,24 @@ Implemented and Windows-CI verified.
 - multi-tone fallback is allowed only when all four sides independently provide strong near-edge border evidence;
 - each side keeps its own observed border color; no global color tolerance is widened;
 - three-side multi-tone evidence cannot authorize the fallback;
+- insufficient per-side visible support cannot authorize the fallback;
 - per-side contact-risk detection remains mandatory and can still force REVIEW;
-- `BorderDetection.consensus_mode` records `edge`, `single_tone`, `multi_tone_four_side`, or `none` at provider level.
+- repeated detection over identical input is regression-tested for deterministic evidence;
+- `BorderDetection.consensus_mode` records `edge`, `single_tone`, `multi_tone_four_side`, or `none` at provider level;
+- frame-level evidence now propagates the explicit `border_consensus_mode` field.
 
-Windows CI #333 at commit `d86862d05cf9ae4ddbbc4243c3d0eac657484535` passed Ruff + pytest, including multi-tone four-side success, three-side refusal, and contact-risk regression.
+Windows CI #333 at commit `d86862d05cf9ae4ddbbc4243c3d0eac657484535` passed Ruff + pytest for the initial TB-005 behavior checkpoint.
+
+Windows CI #340 at commit `55749b2f378dcd703f6e2baa907eaae144efb093` passed Ruff + pytest after completing the TB-005 evidence/regression contract, including:
+- four-side multi-tone success;
+- three-side refusal;
+- insufficient-side-support refusal;
+- contact-risk preservation;
+- explicit single-tone-mode regression;
+- deterministic repeat evidence;
+- frame evidence propagation of `border_consensus_mode`.
+
+No detection threshold or global color tolerance was relaxed for this completion checkpoint.
 
 Representative diagnostic after refined extraction:
 - Candidate B frames requiring different side tones can now enter `multi_tone_four_side` rather than being rejected solely by cross-side color disagreement;
@@ -103,16 +117,19 @@ Representative diagnostic after refined extraction:
 M2 is substantially hardened but the Tier-B acceptance gate is not yet closed. Remaining work is now concentrated in final integrated corpus acceptance and any defects exposed by that run.
 
 Required closure run:
-1. execute the current integrated PR #11 head against Candidate A/B using the approved refined extraction path;
-2. record per-frame extraction, border consensus mode, metadata evidence, joint-cleanup evidence and PASS/REVIEW/FAIL;
-3. inspect outputs for silent content loss, edge damage, numeral residue, border residue and accidental artwork deletion;
-4. fix only evidence-backed defects and preserve REVIEW-first policy;
-5. obtain owner acceptance for the representative corpus result.
+1. obtain the owner-held Candidate A/B bytes and verify their SHA-256 values before execution;
+2. execute the current integrated PR #11 head against those hash-matched bytes using the approved refined extraction path;
+3. record per-frame extraction, border consensus mode, metadata evidence, joint-cleanup evidence and PASS/REVIEW/FAIL;
+4. inspect outputs for silent content loss, edge damage, numeral residue, border residue and accidental artwork deletion;
+5. fix only evidence-backed defects and preserve REVIEW-first policy;
+6. obtain owner acceptance for the representative corpus result.
+
+A previous diagnostic or hash-only record is not a substitute for this final integrated rerun. If the source bytes are not available in the execution environment, the acceptance gate remains open rather than being inferred from synthetic CI.
 
 ## Gate Status
-**M2 Tier-B: NOT YET ACCEPTED, but hardening implementation is near gate completion.**
+**M2 Tier-B: NOT YET ACCEPTED, but TB-001 through TB-005 implementation/regression hardening is complete at the current checkpoint.**
 
-TB-001 through TB-005 are implemented and regression-verified. The remaining blocker is the final integrated Tier-B acceptance/evidence pass, not a known unbounded destructive path.
+The remaining blocker is the final integrated Tier-B acceptance/evidence pass on the hash-matched Candidate A/B source bytes, not a known unbounded destructive path.
 
 ## Repository Safety
 - candidate source bytes remain outside Git history;
