@@ -75,6 +75,7 @@ def _border_evidence(detection: BorderDetection) -> dict[str, object]:
         "border_detected": detection.detected,
         "border_confidence": detection.confidence,
         "border_contact_risk": detection.contact_risk,
+        "border_consensus_mode": detection.consensus_mode,
         "border_sides": sides,
     }
 
