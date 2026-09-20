@@ -1,7 +1,7 @@
 # MTKrita Current Implementation Status and Known Gaps
 
 ## Status
-SSOT — Engineering Implementation Status v2.3
+SSOT — Engineering Implementation Status v2.4
 
 ## Purpose
 แยกให้ชัดเจนระหว่างสิ่งที่อยู่ในเอกสาร สิ่งที่ implement แล้วจริง สิ่งที่ verify แล้วจริง และงานที่ยังเป็น release blocker เพื่อให้ทีมพัฒนารับช่วงต่อโดยไม่ต้องเดาจาก commit history
@@ -31,14 +31,16 @@ Windows CI verifies:
 - strict M2 task descriptor and MainBoard-owned final target resolution.
 
 ## Implemented and Verified — M2 Transparent Pipeline
-PR #11 now includes verified coverage for:
+PR #11 includes verified coverage for:
 - deterministic exact + controlled scaled 5×2 extraction;
 - bounded visual separator refinement (`configured_refined`) near predicted separators without resampling source pixels;
 - ADR-023 source transparency classification before alpha-generating cleanup;
 - rounded/inset border discovery after transparent padding;
 - visible-support vs visible-color-purity border evidence;
 - original edge/single-tone border consensus plus conservative four-side multi-tone fallback;
-- explicit `border_consensus_mode` propagation into frame evidence;
+- explicit `border_consensus_mode`, `border_requires_review` and `border_review_reason` frame evidence;
+- fail-closed rejection of incoherent multi-tone constructed thickness;
+- three-side differently colored border evidence routes REVIEW rather than collapsing into absence;
 - per-side border offset/thickness/color/confidence/contact evidence;
 - localized border-contact ranges and REVIEW-first contact safety;
 - anchored frame-number metadata detection with geometry/compactness/dominance evidence;
@@ -60,22 +62,21 @@ PR #11 now includes verified coverage for:
 ## Tier-B Acceptance Boundary
 Issue #12 tracks production-like transparent corpus hardening without committing user/source bytes.
 
-Representative Candidate A/B have been hash-matched and inspected. Evidence-backed hardening TB-001 through TB-005 is now implemented and Windows-CI verified:
-- TB-001 rounded-border evidence quality;
-- TB-002 post-exclusion local metadata ownership;
-- TB-003 alpha-visible metadata topology for transparent sources;
-- TB-004 bounded visual separator refinement for shifted gutters;
-- TB-005 conservative four-side multi-tone border consensus, including frame-level consensus-mode evidence.
+TB-001 through TB-005 and the corpus-driven TB-005 safety corrections are implemented and Windows-CI verified. Relevant checkpoints include #324, #328/#329, #330, #333, #340, #347 and #351. No safety threshold or global color tolerance was relaxed.
 
-Verified CI checkpoints include #324, #328, #329, #330, #333 and #340; all passed Ruff + pytest. CI #340 at commit `55749b2f378dcd703f6e2baa907eaae144efb093` completed the explicit TB-005 regression/evidence contract: four-side success, three-side refusal, insufficient-support refusal, contact-risk preservation, single-tone regression, deterministic repeat and `border_consensus_mode` propagation. No safety threshold or global color tolerance was relaxed to obtain these results.
+Current integrated hash-matched corpus run after CI #351:
+- Candidate A: REVIEW 10/10;
+- Candidate B: REVIEW 10/10;
+- PASS/AUTO_FIXED/FAIL: 0 across the 20 representative frames;
+- source SHA-256 remained unchanged before/after for both candidates;
+- Candidate B frames 3 and 5 now route `BORDER.AMBIGUOUS` instead of the previous unsafe `AUTO_FIXED` border-residue path;
+- no representative frame currently receives automatic destructive output.
 
-Representative diagnostics show Candidate B extraction contamination is corrected by bounded separator refinement, and frames requiring different side tones can now enter the explicit multi-tone fallback while normal frames retain the original single-tone path.
+This is a meaningful safety improvement but **does not satisfy M2 Tier-B acceptance** because supported decorative border/metadata cleanup has not yet demonstrated intended integrated automatic behavior.
 
-**Remaining M2 acceptance blocker:** execute the final integrated Tier-B run on the current PR #11 head using the owner-held, SHA-256-matched Candidate A/B bytes, record per-frame PASS/REVIEW/FAIL plus extraction/border/metadata/joint evidence, inspect output for content loss/residue, and obtain owner acceptance.
+The next evidence-backed blocker is border-contact topology / incomplete border-band ownership. Representative frames show very long inner matching strips (for example Candidate B frame 1 right ≈0.905 and bottom ≈0.809; frame 7 left ≈0.921) and other contact concentrated near rounded corners. These observations do not authorize lowering the contact threshold or widening color tolerance; a stronger ownership/topology model is required.
 
-If the source bytes are not present in the execution environment, the final corpus run is not inferred from synthetic CI or prior diagnostics; the gate remains open.
-
-M2 shall not be declared complete from synthetic CI or isolated component diagnostics alone.
+M2 shall not be declared complete from synthetic CI, isolated component diagnostics, or safety-only all-REVIEW corpus behavior.
 
 ## M3 Opaque Route — Not Yet Production-Complete
 Remaining work:
@@ -107,25 +108,25 @@ Remaining distribution work includes packaged `spawn` smoke, installer/frozen-ru
 
 ## Repository Hygiene / Toolchain State
 At the current PR #11 line:
-- root tree contains only project source/config/docs/tests/tooling;
 - production/user Tier-B source bytes are not committed;
 - generated PNG/ZIP/database/log/cache/temp/build artifacts are not intentionally part of the PR;
-- `.gitignore` covers Python/test caches, environments, build/dist, logs and runtime `outputs/`/`jobs/` without broad suppression of legitimate fixture types;
+- `.gitignore` covers runtime/caches without broad suppression of legitimate fixture types;
 - GitHub Actions use `actions/checkout@v7` and `actions/setup-python@v7` with `contents: read` least privilege;
-- known Pillow joint-cleanup deprecation warnings were removed without behavior change;
-- CI #340 passed Ruff + pytest for the completed TB-005 behavior/evidence checkpoint.
+- CI #351 passed Ruff + pytest for the current border-ambiguity/evidence checkpoint.
 
 ## Current Gate
-PR #11 remains draft because final Tier-B transparent corpus acceptance is still open. `REVIEW > destructive guess` remains mandatory.
+PR #11 remains draft. `REVIEW > destructive guess` remains mandatory.
+
+**M2 Tier-B: NOT ACCEPTED.** Issue #12 and Issue #2 remain open.
 
 ## Immediate Engineering Sequence
-1. make the owner-held Candidate A/B bytes available in a read-only execution environment and verify the recorded SHA-256 values;
-2. run current PR #11 head through refined extraction and the full frame pipeline;
-3. record extraction provenance, border consensus mode, metadata/joint evidence and per-frame result without committing source bytes;
-4. inspect generated provisional/final outputs for silent content loss, border/numeral residue and accidental artwork deletion;
-5. fix only evidence-backed defects;
-6. close Issue #12 and M2 / Issue #2 when Tier-B acceptance is approved;
-7. begin M3 opaque-background implementation;
+1. specify the next border-contact topology / complete border-band ownership contract from current integrated evidence;
+2. add synthetic regressions before/with implementation, including rounded-corner-only contact, long adjacent decorative-tone continuation and real artwork touching the inner edge;
+3. preserve the existing contact-risk threshold and fail closed unless ownership is proven;
+4. require Windows Ruff + pytest PASS;
+5. rerun hash-matched Candidate A/B read-only and inspect every automatic output;
+6. sync evidence and close M2 only after representative Tier-B acceptance is actually satisfied;
+7. begin M3 opaque-background implementation only after M2 gate closure;
 8. then advance UI/batch productization and Windows packaging/release milestones.
 
 ## Canonical References
