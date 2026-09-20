@@ -3,7 +3,6 @@ from PIL import Image, ImageDraw
 from mtkrita.border import BorderDetection, BorderSide
 from mtkrita.border_band_depth import DepthTopologyStatus, plan_border_band_depth_topology
 
-
 _TONE_A = (40, 180, 90, 255)
 _TONE_B = (90, 210, 130, 255)
 
