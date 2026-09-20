@@ -1,7 +1,7 @@
 # MTKrita Platform Foundation Implementation Status
 
 ## Status
-SSOT — Platform Foundation Implementation Track v2.9
+SSOT — Platform Foundation Implementation Track v3.0
 
 ## Purpose
 Track implementation of the PathManager/MainBoard/ResourceBroker/multi-worker/control-plane architecture separately from image-algorithm maturity while reflecting the verified integration maintained on PR #11.
@@ -75,6 +75,7 @@ PR #11 contains verified Tier-B-oriented safety mechanisms while keeping policy 
 - inset/rounded border discovery after transparent padding;
 - visible-support vs visible-color-purity evidence;
 - conservative four-side multi-tone fallback without widened global tolerance;
+- explicit frame evidence for border consensus mode;
 - localized border contact ranges;
 - alpha-visible metadata topology for transparent inputs;
 - post-exclusion local metadata ownership and remote-artwork preservation;
@@ -102,13 +103,16 @@ Windows CI has passed Ruff + pytest for platform and M2 integration including:
 - TB-001/TB-002 evidence and ownership refinements;
 - TB-003 transparent metadata topology;
 - TB-004 bounded separator refinement;
-- TB-005 conservative multi-tone four-side fallback.
+- TB-005 conservative multi-tone four-side fallback and explicit consensus-mode evidence.
 
 Recent checkpoints:
 - CI #324 — TB-002 PASS;
 - CI #328/#329 — TB-003 behavior/evidence PASS;
 - CI #330 — TB-004 PASS;
-- CI #333 — TB-005 PASS.
+- CI #333 — initial TB-005 PASS;
+- CI #340 at `55749b2f378dcd703f6e2baa907eaae144efb093` — completed TB-005 regression/evidence contract PASS (Ruff + pytest).
+
+CI #340 includes explicit synthetic coverage for four-side success, three-side refusal, insufficient-side-support refusal, preserved contact risk, unchanged single-tone mode, deterministic repeat and frame evidence propagation. No automatic threshold or global color tolerance was relaxed.
 
 Toolchain remains current:
 - `actions/checkout@v7`;
@@ -134,11 +138,14 @@ These gaps block production release readiness but do not invalidate the verified
 - `REVIEW > destructive guess` remains mandatory.
 
 ## Immediate Next Work
-1. execute the final integrated Tier-B Candidate A/B run on the current PR #11 head;
-2. record per-frame extraction, border, metadata, joint-plan and output-inspection evidence without committing private/source bytes;
-3. close M2 acceptance only after Tier-B approval;
-4. begin M3 opaque-background implementation;
-5. later return to production schema freeze, packaged-runtime smoke and release hardening.
+1. make the owner-held Candidate A/B bytes available read-only and verify their recorded SHA-256 values;
+2. execute the final integrated Tier-B Candidate A/B run on the current PR #11 head using refined extraction;
+3. record per-frame extraction, border consensus mode, metadata, joint-plan and output-inspection evidence without committing private/source bytes;
+4. close M2 acceptance only after Tier-B approval;
+5. begin M3 opaque-background implementation;
+6. later return to production schema freeze, packaged-runtime smoke and release hardening.
+
+Synthetic CI, historical diagnostics or hash-only records do not substitute for the final hash-matched representative corpus run.
 
 ## References
 - `31_STATE_MACHINE_SPEC.md`
