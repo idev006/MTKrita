@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from PIL import Image
 
 from .border import BorderDetection, detect_border, remove_border
+from .closed_ring import ClosedRingPlan, ClosedRingStatus, plan_closed_ring
 from .contact_topology import BorderContactTopology, resolve_reciprocal_corner_contact
 from .content import analyze_alpha_content
 from .fit import fit_rgba_to_canvas
@@ -18,7 +19,9 @@ from .joint_cleanup import (
 from .line_profile import validate_static_sticker
 from .metadata import MetadataDetection, detect_corner_metadata, remove_detected_metadata
 from .models import Finding, FrameResult, FrameStatus, ProcessingMode
+from .ring_cleanup import apply_closed_ring_cleanup
 from .routing import BackgroundRoute, TransparencyDecision, decide_source_background_route
+from .spatial_joint_cleanup import plan_spatial_ring_metadata_cleanup
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,34 @@ def _border_evidence(
         "border_requires_review": detection.requires_review,
         "border_review_reason": detection.review_reason,
         "border_sides": sides,
+    }
+
+
+def _closed_ring_evidence(plan: ClosedRingPlan) -> dict[str, object]:
+    sides: dict[str, object] = {}
+    for name, side in plan.sides.items():
+        sides[name] = {
+            "offset": side.offset,
+            "thickness": side.thickness,
+            "line_support_min": side.line_support_min,
+            "line_support_mean": side.line_support_mean,
+            "palette": tuple((tone.color, tone.fraction) for tone in side.palette),
+            "palette_coverage": side.palette_coverage,
+            "raw_contact_fraction": side.raw_contact_fraction,
+            "raw_contact_ranges": side.raw_contact_ranges,
+            "explained_corner_ranges": side.explained_corner_ranges,
+            "contact_fraction": side.contact_fraction,
+            "contact_ranges": side.contact_ranges,
+            "contact_risk": side.contact_risk,
+        }
+    return {
+        "closed_ring_status": plan.status.value,
+        "closed_ring_mask_sha256": plan.mask_sha256,
+        "closed_ring_pixel_count": plan.ring_pixel_count,
+        "closed_ring_area_ratio": plan.ring_area_ratio,
+        "closed_ring_thickness_spread": plan.thickness_spread,
+        "closed_ring_reasons": plan.reasons,
+        "closed_ring_sides": sides,
     }
 
 
@@ -185,6 +216,68 @@ def _early_review(
     )
 
 
+def _apply_closed_ring_path(
+    working: Image.Image,
+    border: BorderDetection,
+    *,
+    cfg: FramePipelineConfig,
+    source_decision: TransparencyDecision,
+    actions: list[str],
+    findings: list[Finding],
+    evidence: dict[str, object],
+) -> tuple[Image.Image, bool, bool]:
+    """Attempt TB-007 on a private frame.
+
+    Returns ``(working, handled_border, handled_metadata)``. A REVIEW finding means the
+    caller must stop before falling through to another destructive border strategy.
+    """
+    if source_decision.route != BackgroundRoute.SKIP_REMOVE_BACKGROUND:
+        return working, False, False
+
+    ring = plan_closed_ring(working, border)
+    evidence.update(_closed_ring_evidence(ring))
+    if ring.status in {ClosedRingStatus.NO_RING, ClosedRingStatus.REVIEW}:
+        return working, False, False
+
+    if ring.status == ClosedRingStatus.SAFE_RING:
+        working = apply_closed_ring_cleanup(working, ring)
+        actions.append("REMOVE_CLOSED_RING")
+        return working, True, False
+
+    if not cfg.remove_metadata:
+        findings.append(
+            _finding(
+                "RING.CONTACT_RISK",
+                "Closed-ring contact cannot be explained because metadata cleanup is disabled",
+            )
+        )
+        return working, True, False
+
+    assert ring.mask is not None
+    metadata = detect_corner_metadata(working, analysis_exclusion_mask=ring.mask)
+    evidence.update(_metadata_evidence(metadata))
+    joint_plan = plan_spatial_ring_metadata_cleanup(
+        working,
+        ring,
+        metadata,
+        metadata_auto_threshold=cfg.metadata_auto_threshold,
+    )
+    evidence.update(_joint_evidence(joint_plan))
+    if joint_plan.status != JointCleanupStatus.SAFE_PLAN:
+        findings.append(
+            _finding(
+                "RING.CONTACT_RISK",
+                "Closed-ring contact remains ambiguous after exact-mask joint planning",
+                reasons=joint_plan.reasons,
+            )
+        )
+        return working, True, False
+
+    working = apply_joint_cleanup(working, joint_plan)
+    actions.append("JOINT_RING_METADATA_CLEANUP")
+    return working, True, True
+
+
 def process_frame(
     image: Image.Image,
     *,
@@ -252,79 +345,105 @@ def process_frame(
                     evidence=evidence,
                 )
 
-            if border.contact_risk:
-                source_decision = decide_source_background_route(working)
-                evidence.update(_route_evidence(source_decision))
-                if not cfg.remove_metadata:
-                    findings.append(
-                        _finding(
-                            "BORDER.CONTACT_RISK",
-                            "Border contact cannot be explained because metadata cleanup is disabled",
-                        )
-                    )
-                    return _early_review(
-                        working,
-                        index=index,
-                        row=row,
-                        column=column,
-                        extraction_rect=extraction_rect,
-                        extraction_method=extraction_method,
-                        extraction_confidence=extraction_confidence,
-                        findings=findings,
-                        actions=actions,
-                        evidence=evidence,
-                        decision=source_decision,
-                    )
-
-                border_mask = build_border_cleanup_mask(working, border)
-                metadata = detect_corner_metadata(
+            source_decision = decide_source_background_route(working)
+            evidence.update(_route_evidence(source_decision))
+            working, ring_handled, ring_metadata_handled = _apply_closed_ring_path(
+                working,
+                border,
+                cfg=cfg,
+                source_decision=source_decision,
+                actions=actions,
+                findings=findings,
+                evidence=evidence,
+            )
+            metadata_handled = metadata_handled or ring_metadata_handled
+            if findings:
+                return _early_review(
                     working,
-                    analysis_exclusion_mask=border_mask,
+                    index=index,
+                    row=row,
+                    column=column,
+                    extraction_rect=extraction_rect,
+                    extraction_method=extraction_method,
+                    extraction_confidence=extraction_confidence,
+                    findings=findings,
+                    actions=actions,
+                    evidence=evidence,
+                    decision=source_decision,
                 )
-                evidence.update(_metadata_evidence(metadata))
-                joint_plan = plan_joint_cleanup(
-                    working,
-                    border,
-                    metadata,
-                    border_auto_threshold=cfg.border_auto_threshold,
-                    metadata_auto_threshold=cfg.metadata_auto_threshold,
-                )
-                evidence.update(_joint_evidence(joint_plan))
-                if joint_plan.status != JointCleanupStatus.SAFE_PLAN:
-                    findings.append(
-                        _finding(
-                            "BORDER.CONTACT_RISK",
-                            "Border contact remains ambiguous after joint cleanup planning",
-                            reasons=joint_plan.reasons,
-                        )
-                    )
-                    return _early_review(
-                        working,
-                        index=index,
-                        row=row,
-                        column=column,
-                        extraction_rect=extraction_rect,
-                        extraction_method=extraction_method,
-                        extraction_confidence=extraction_confidence,
-                        findings=findings,
-                        actions=actions,
-                        evidence=evidence,
-                        decision=source_decision,
-                    )
 
-                metadata_handled = True
-                if source_decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND:
-                    working = apply_joint_cleanup(working, joint_plan)
-                    actions.append("JOINT_BORDER_METADATA_CLEANUP")
+            if not ring_handled:
+                if border.contact_risk:
+                    if not cfg.remove_metadata:
+                        findings.append(
+                            _finding(
+                                "BORDER.CONTACT_RISK",
+                                "Border contact cannot be explained because metadata cleanup is disabled",
+                            )
+                        )
+                        return _early_review(
+                            working,
+                            index=index,
+                            row=row,
+                            column=column,
+                            extraction_rect=extraction_rect,
+                            extraction_method=extraction_method,
+                            extraction_confidence=extraction_confidence,
+                            findings=findings,
+                            actions=actions,
+                            evidence=evidence,
+                            decision=source_decision,
+                        )
+
+                    border_mask = build_border_cleanup_mask(working, border)
+                    metadata = detect_corner_metadata(
+                        working,
+                        analysis_exclusion_mask=border_mask,
+                    )
+                    evidence.update(_metadata_evidence(metadata))
+                    joint_plan = plan_joint_cleanup(
+                        working,
+                        border,
+                        metadata,
+                        border_auto_threshold=cfg.border_auto_threshold,
+                        metadata_auto_threshold=cfg.metadata_auto_threshold,
+                    )
+                    evidence.update(_joint_evidence(joint_plan))
+                    if joint_plan.status != JointCleanupStatus.SAFE_PLAN:
+                        findings.append(
+                            _finding(
+                                "BORDER.CONTACT_RISK",
+                                "Border contact remains ambiguous after joint cleanup planning",
+                                reasons=joint_plan.reasons,
+                            )
+                        )
+                        return _early_review(
+                            working,
+                            index=index,
+                            row=row,
+                            column=column,
+                            extraction_rect=extraction_rect,
+                            extraction_method=extraction_method,
+                            extraction_confidence=extraction_confidence,
+                            findings=findings,
+                            actions=actions,
+                            evidence=evidence,
+                            decision=source_decision,
+                        )
+
+                    metadata_handled = True
+                    if source_decision.route == BackgroundRoute.SKIP_REMOVE_BACKGROUND:
+                        working = apply_joint_cleanup(working, joint_plan)
+                        actions.append("JOINT_BORDER_METADATA_CLEANUP")
+                    else:
+                        actions.append("PLAN_JOINT_BORDER_METADATA_CLEANUP")
                 else:
-                    actions.append("PLAN_JOINT_BORDER_METADATA_CLEANUP")
-            else:
-                working = remove_border(
-                    working,
-                    border,
-                    auto_threshold=cfg.border_auto_threshold,
-                )
-                actions.append("REMOVE_BORDER")
+                    working = remove_border(
+                        working,
+                        border,
+                        auto_threshold=cfg.border_auto_threshold,
+                    )
+                    actions.append("REMOVE_BORDER")
 
     if source_decision is None:
         source_decision = decide_source_background_route(working)
