@@ -1,7 +1,7 @@
 # MTKrita Test Data and Golden Corpus Specification
 
 ## Status
-SSOT — Verification Corpus Baseline v1.0
+SSOT — Verification Corpus Baseline v1.1
 
 ## Purpose
 กำหนดชุดข้อมูลทดสอบอ้างอิงที่ใช้พิสูจน์ correctness, safety และ regression ของ pipeline
@@ -17,8 +17,30 @@ SSOT — Verification Corpus Baseline v1.0
 8. Failure inputs — corrupt PNG, unsupported mode, incomplete files
 9. Reliability cases — interrupted jobs, stale attempts, retry/resume
 
+## Evidence Tiers
+
+### Tier A — Synthetic Deterministic Gate
+Generated fixtures may prove deterministic contracts, stage order, provenance, export lineage and regression behavior without storing user artwork.
+
+M2 includes an automated synthetic 10-frame end-to-end gate covering:
+- 2×5 deterministic split
+- border removal
+- frame-metadata removal
+- pre-metadata source transparency provenance
+- smart fit / validation
+- atomic PNG export + SHA-256
+- manifest population
+- source immutability
+
+Synthetic evidence is mandatory automated CI evidence, but it does **not** replace production-image acceptance.
+
+### Tier B — Approved Production/Representative Corpus
+Representative real-world or owner-approved artifacts prove that algorithms generalize to production characteristics. These cases require reviewer approval and stable case metadata/hashes.
+
+A milestone requiring an "approved corpus" is not fully closed solely because Tier A passes when Tier B is explicitly required by its exit criteria.
+
 ## Golden Case Record
-Each case must include:
+Each production/representative case must include:
 - case_id
 - source artifact hash
 - archetype
@@ -40,6 +62,8 @@ Pixel-perfect comparison is required only where deterministic and stable. For se
 - transparent inputs bypass background segmentation
 - no default upscale
 - final output traceable to source/config/provider versions
+- cleanup-generated alpha does not redefine source transparency routing
+- same/near-border-color artwork contact prevents destructive auto-crop
 
 ## Regression Rule
 Every Critical/High defect fixed must add a regression case before closure.
@@ -48,9 +72,9 @@ Every Critical/High defect fixed must add a regression case before closure.
 Corpus metadata must be version-controlled. Large binary fixtures may be stored in a dedicated test-data location, but hashes and case manifests remain in repository SSOT/evidence.
 
 ## M2 Minimum Corpus
-Transparent 5x2, border variants, metadata variants, alpha routing, edge-contact cases.
+Tier A automated synthetic 5×2 gate plus Tier B approved transparent cases covering border variants, metadata variants, alpha routing and edge-contact safety.
 
 ## M3 Minimum Corpus
 Opaque black archetype, white/color backgrounds, near-uniform backgrounds, dark foreground preservation, ambiguous masks, mixed transparent/opaque batch.
 
-References: `23_SUPPORTED_INPUT_ARCHETYPES.md`, `40_ACCEPTANCE_TEST_MATRIX.md`, `14_SOFTWARE_TEST_STRATEGY.md`.
+References: `23_SUPPORTED_INPUT_ARCHETYPES.md`, `40_ACCEPTANCE_TEST_MATRIX.md`, `14_SOFTWARE_TEST_STRATEGY.md`, ADR-023.

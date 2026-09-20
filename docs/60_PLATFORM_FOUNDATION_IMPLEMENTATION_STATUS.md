@@ -1,148 +1,162 @@
 # MTKrita Platform Foundation Implementation Status
 
 ## Status
-SSOT — Platform Foundation Implementation Track v2.6
+SSOT — Platform Foundation Implementation Track v3.1
 
 ## Purpose
-Track implementation of the approved PathManager/MainBoard/ResourceBroker/multi-worker control-plane architecture separately from M2 image-processing work.
+Track implementation of the PathManager/MainBoard/ResourceBroker/multi-worker/control-plane architecture separately from image-algorithm maturity while reflecting the verified integration maintained on PR #11.
 
-## Current Track
-PR #10 / branch `feat/platform-control-foundation`
+## Current Tracks
+- PR #10 / `feat/platform-control-foundation` — platform/control-plane foundation
+- PR #11 / `feat/m2-platform-integration` — stacked integration authority combining the verified platform boundary with the M2 image pipeline
 
-## Implemented and Verified Foundation
+## Implemented and Verified Platform Foundation
 
 ### Durable authority and resources
-- typed `PathRef` / centralized `PathManager` with workspace ownership and worker-private scratch;
-- ADR-027 accepted: workers consume only control-plane-staged immutable inputs;
-- typed immutable job `INPUT` namespace under `jobs/<job_id>/inputs/`;
-- `ResourceBroker.stage_input_file()` copies external/control-plane source bytes into job input space without mutating the original source;
-- staged input uses overwrite refusal, flush/fsync, SHA-256, byte-size evidence and atomic promotion;
-- `ResourceBroker.verify_input_file()` verifies staged immutable input before dispatch;
-- `ResourceBroker` validates worker candidates, SHA-256 and authoritative promotion;
-- SQLite `JobStore` schema v3 with explicit v1→v2→v3 migration;
-- durable job/task state, generation, attempts, worker identity, leases, CAS stale-write protection and event journal;
-- durable task descriptors persist priority, descriptor version and JSON payload;
-- legacy v2 tasks remain explicitly non-reconstructable rather than receiving guessed descriptors.
+- typed `PathRef` and centralized `PathManager`;
+- immutable staged job INPUT namespace;
+- `ResourceBroker`-controlled staging, verification, private scratch and final promotion;
+- source preservation, overwrite refusal, SHA-256 and byte-size evidence;
+- SQLite `JobStore` v3 with explicit migrations;
+- durable job/task state, generation, attempt, worker identity, leases and stale-write protection;
+- durable versioned task descriptors and scheduler priority.
 
-### Lifecycle, recovery and artifact commitment
-- `JobLifecycleController` implements pause/stop/resume safe-boundary policy;
-- idempotent startup reconciliation handles orphaned jobs/tasks;
-- ADR-024 durable artifact commit intent bridges filesystem promotion and JobStore finalization;
-- artifact-first startup recovery preserves valid promoted artifacts before generic interruption;
-- stale/superseded attempts and hash/integrity failures cannot claim success.
+### Lifecycle, recovery and commitment
+- pause/stop/resume safe-boundary policy;
+- startup reconciliation for orphaned jobs/tasks;
+- ADR-024 durable artifact commit intent bridging filesystem promotion and JobStore finalization;
+- artifact-first startup reconciliation;
+- stale/superseded attempts cannot claim success.
 
-### MainBoard, observability and diagnostics
-- versioned `MessageEnvelope` and replaceable in-process EventBus;
-- MainBoard composition root contains no sticker/image business algorithms;
-- centralized `JsonlLogSink` records validated EventBus messages with correlation/task/worker context;
-- `DiagnosticBundleBuilder` emits job-scoped diagnostics with secret redaction and excludes source/private image bytes by default.
+### MainBoard / observability
+- MainBoard composition root with specialized services rather than a God Object;
+- versioned `MessageEnvelope` + EventBus;
+- centralized JSONL LogSink;
+- job-scoped diagnostic bundle baseline with secret redaction and no source/private image bytes by default.
 
-### Scheduler / worker control plane
-- bounded fair scheduler with queue/inflight limits, per-job fairness and priority anti-starvation;
-- `DispatchCoordinator` bridges scheduler → durable assignment/lease → runtime lease → WorkerManager with compensation on assignment failure;
-- `WorkerLossCoordinator` interrupts exact LOST attempts, releases runtime ownership and optionally requeues;
-- ADR-025 durable scheduler reconstruction restores only eligible PENDING/INTERRUPTED tasks from durable descriptors;
-- RUNNING, terminal, REVIEW and legacy non-reconstructable work is never silently requeued.
+### Scheduler / workers
+- bounded fair scheduler with queue/inflight limits, priority and anti-starvation;
+- `DispatchCoordinator` with compensation on runtime assignment failure;
+- `WorkerLossCoordinator` and heartbeat/watchdog;
+- durable scheduler reconstruction from eligible task descriptors only;
+- Windows `spawn` process adapter behind replaceable worker interfaces;
+- separate command/event channels;
+- versioned UTF-8 JSON IPC; authoritative pickle/domain-object IPC prohibited;
+- `WorkerEventRouter` and `WorkerRuntimeController`;
+- real Windows child-process lifecycle/heartbeat/graceful-stop CI coverage.
 
-### Windows worker runtime / IPC
-- explicit Windows `spawn` process adapter behind `WorkerProcessFactory` / `WorkerHandle` contracts;
-- separate unidirectional command/event channels;
-- versioned UTF-8 JSON wire schema with size/type/schema/identity validation; no authoritative pickle/domain-object IPC;
-- `ProcessWorkerSession` owns channel endpoints and bounded receive/wait/close lifecycle;
-- `WorkerEventRouter` validates worker/task/attempt identity before WorkerManager mutation and EventBus publish;
-- `WorkerRuntimeController` manages start/pump/ping/cooperative stop/process exit/session close without owning durable authority;
-- real Windows CI verifies spawn → WorkerReady → heartbeat → graceful stop → process exit.
+### ExecuteTask / result authority
+- ADR-026 immutable ExecuteTask and candidate-only worker result model;
+- ADR-027 control-plane-staged immutable worker inputs;
+- ExecuteTask v2 with verified `inputs[]` and private scratch;
+- no worker-selected final target;
+- strict candidate payload validation;
+- `CandidateResultCoordinator` verifies exact durable RUNNING job/task/worker/attempt/lease;
+- successful candidate passes ResourceBroker verification and ADR-024 before durable SUCCEEDED;
+- REVIEW/FAILED remain control-plane transitions;
+- stale/malformed/hash-mismatch/size-mismatch/cross-job/multi-artifact candidates cannot create durable success.
 
-### ExecuteTask / immutable input / result candidate authority
-- ADR-026 accepted: ExecuteTask is immutable and worker results are candidates;
-- ADR-027 accepted: raw external paths never become worker input authority;
-- `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md` is the detailed task/result authority SSOT;
-- `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md` defines staged immutable input and M2 mapping;
-- ExecuteTask payload version 2 carries explicit verified immutable `inputs[]` plus worker-private scratch;
-- durable descriptors carry logical input identity/hash rather than arbitrary external absolute paths;
-- `ExecuteTaskCommandBuilder` reconstructs staged input through `PathManager.input()` and verifies hash before command creation;
-- generic no-input tasks remain valid with `inputs=[]`;
-- worker command carries no authoritative final-output target;
-- `TaskExecutor` is a replaceable interface boundary;
-- provisional artifacts are limited to safe scratch filename + SHA-256 + byte size evidence;
-- candidate result payloads are versioned and strictly parsed;
-- baseline real child process validates ExecuteTask and emits `TaskStarted → TaskFailed(WORKER.EXECUTOR_NOT_CONFIGURED)` until a concrete production image executor is connected, preventing false success.
+## Verified M2 Integration on PR #11
+- strict `M2FrameTaskDescriptor` schema;
+- MainBoard-owned `M2FrameTargetResolver`;
+- `M2FrameTaskExecutor` adapting the headless image pipeline behind injected seams;
+- static built-in `m2.frame` registration; task payload cannot choose module/callable/import path;
+- staged-input integrity verification inside worker execution;
+- PASS/AUTO_FIXED → exactly one provisional scratch PNG candidate;
+- REVIEW → no false success artifact;
+- FAIL → structured task failure;
+- source and staged input remain immutable;
+- real Windows spawned-child E2E verifies staged input → durable dispatch/lease → ExecuteTask → child M2 pipeline → candidate → MainBoard validation → ResourceBroker/ADR-024 commit → durable SUCCEEDED → final PNG.
 
-### M2 production descriptor and executor boundary
-- strict `M2FrameTaskDescriptor` schema version 1 is implemented;
-- descriptor rejects unknown critical fields, path-like `input_name`/`output_name`, invalid SHA-256, bad extraction geometry, invalid confidence/threshold values and invalid `.png` output identity;
-- production M2 descriptor includes frame index/row/column, extraction provenance and immutable pipeline configuration snapshot;
-- `M2FrameTargetResolver` validates durable descriptor identity and resolves final output only through `PathManager.output()`;
-- `M2FrameTaskExecutor` adapts the headless M2 pipeline behind injected processor/config/writer seams without duplicating M2 algorithms in platform code;
-- worker independently verifies staged input file existence/hash/size before image processing;
-- PASS/AUTO_FIXED maps to one provisional scratch PNG success candidate;
-- REVIEW produces no final/provisional success artifact;
-- FAIL maps to structured failure using pipeline finding identity;
-- executor serializes frame findings/actions/evidence into JSON-compatible candidate evidence;
-- source/staged input is never mutated by the executor.
+Final output is not published merely because a worker produced a candidate; final publication remains MainBoard authority.
 
-### Durable candidate result coordination
-- `CandidateResultCoordinator` accepts candidate events only for the exact durable RUNNING job/task/worker/attempt;
-- WorkerManager must be BUSY on the same task/attempt and the runtime lease must still be authoritative;
-- MVP successful candidate requires exactly one primary provisional artifact;
-- worker cannot select final output destination;
-- MainBoard-side `CandidateTargetResolver` resolves the final PathRef from trusted durable/domain context;
-- ResourceBroker verifies provisional file existence, SHA-256 and byte size before commit;
-- final target must be same-job OUTPUT or EVIDENCE and non-worker-owned;
-- success flows through the existing ADR-024 `ArtifactCommitCoordinator`; durable task reaches SUCCEEDED only after commit finalization;
-- REVIEW/FAILED use exact JobStore task transition before runtime ownership is released;
-- accepted terminal/review outcome releases TaskLeaseRegistry, WorkerManager BUSY ownership and scheduler inflight ownership;
-- malformed/stale/wrong-worker/hash-mismatch/size-mismatch/cross-job/zero-artifact/multi-artifact candidates cannot produce durable success.
+## Current Image-Pipeline Hardening Boundary
+PR #11 contains verified Tier-B-oriented safety mechanisms while keeping policy in the image/domain layer:
+- inset/rounded border discovery after transparent padding;
+- visible-support vs visible-color-purity evidence;
+- conservative four-side multi-tone fallback without widened global tolerance;
+- explicit frame evidence for border consensus mode and REVIEW-required border ambiguity;
+- multi-tone constructed-thickness coherence gate;
+- three-side differently colored border evidence fails closed to REVIEW;
+- localized border contact ranges;
+- alpha-visible metadata topology for transparent inputs;
+- post-exclusion local metadata ownership and remote-artwork preservation;
+- exact exclusion-mask identity binding;
+- enclosed-visible-hole completion;
+- `JointCleanupPlanner` SAFE_PLAN/REVIEW contract;
+- bounded transparent-gutter separator refinement around configured grid predictions;
+- transparent-source joint cleanup only for SAFE_PLAN;
+- opaque-source cleanup remains plan-only pending M3.
+
+These capabilities do not grant platform workers independent business authority; workers still compute candidates only.
 
 ## CI / Verification Evidence
-
-Current code checkpoints on Windows CI have Ruff PASS + pytest PASS for:
-- core platform/lifecycle/recovery;
-- durable artifact commit and crash reconciliation;
-- observability/diagnostics/scheduler/WorkerManager/dispatch/watchdog;
-- JobStore v3 migration and scheduler reconstruction;
-- JSON IPC codec and real Windows spawn runtime;
-- WorkerEventRouter and WorkerRuntimeController;
-- ExecuteTask v2/result schemas and real child-process ExecuteTask failure-safe smoke;
-- immutable input staging, source-preservation, overwrite refusal and staged hash/size verification;
-- strict M2 descriptor parsing and MainBoard-owned target resolution;
-- M2 executor adapter PASS/AUTO_FIXED/REVIEW/FAIL mapping and tampered-input rejection;
+Windows CI has passed Ruff + pytest for platform and M2 integration including:
+- lifecycle/recovery and durable artifact commit/crash reconciliation;
+- logging/diagnostics/scheduler/WorkerManager/dispatch/watchdog;
+- JobStore v3 migration/reconstruction;
+- IPC codec and real Windows spawn;
+- ExecuteTask v2 and worker runtime;
+- immutable input staging;
+- M2 descriptor/target/executor adapter;
 - CandidateResultCoordinator authority/rejection cases;
-- component end-to-end authority chain:
-  scheduler dispatch → durable RUNNING/lease → ExecuteTask builder → test TaskExecutor private scratch → validated TaskStarted/candidate → CandidateResultCoordinator → ADR-024 commit → durable SUCCEEDED → runtime ownership release.
+- real-process successful M2 E2E;
+- joint border/metadata safety;
+- TB-001/TB-002 evidence and ownership refinements;
+- TB-003 transparent metadata topology;
+- TB-004 bounded separator refinement;
+- TB-005 multi-tone consensus, geometry coherence and ambiguity propagation.
 
-The component E2E uses a test-only executor and does not add a production fake-success mode. PR #9 remains the source of the actual M2 image-processing algorithms.
+Recent checkpoints:
+- CI #324 — TB-002 PASS;
+- CI #328/#329 — TB-003 behavior/evidence PASS;
+- CI #330 — TB-004 PASS;
+- CI #333/#340 — initial/completed TB-005 behavior/evidence PASS;
+- CI #347 — multi-tone constructed-thickness coherence PASS;
+- CI #351 at `7e93b94533fd66652d90c20a64078eb3a840ac3e` — rejected-border ambiguity propagation + FramePipeline REVIEW contract PASS.
 
-## Architectural Rules
+No automatic safety threshold or global cross-side color tolerance was relaxed.
 
-Workers compute only against immutable approved inputs/private scratch. Shared/final mutations are MainBoard-owned. JobStore remains durable authority. Scheduler runtime memory is disposable. Worker/process state reconciles to durable authority, never the reverse. Candidate events are evidence, not completion. `REVIEW > destructive guess` remains unchanged.
+## Current Representative Corpus Boundary
+The hash-matched Candidate A/B bytes are now available and have been rerun read-only after CI #351.
 
-## Known Gaps / Remaining Platform Work
+Integrated result:
+- Candidate A: REVIEW 10/10;
+- Candidate B: REVIEW 10/10;
+- no PASS/AUTO_FIXED/FAIL in the 20-frame representative corpus;
+- source SHA-256 remained unchanged before/after;
+- Candidate B frames 3 and 5 now fail closed as `BORDER.AMBIGUOUS` rather than proceeding through smart fit with decorative-border residue.
 
-1. The platform now has the M2 executor adapter contract, but PR #9 algorithm implementations are not yet wired into a production child-process bootstrap.
-2. Real-process successful M2 image execution awaits a controlled integration branch that combines PR #9 algorithms with the verified PR #10 platform boundary.
-3. Packaged/frozen Windows executable spawn behavior requires distribution-stage smoke testing.
-4. Diagnostic bundle should expand with artifact-commit journal and provider inventory.
-5. Startup reconciliation can be tightened into a store-owned multi-record transaction.
-6. Artifact-commit and JobStore persistence schemas require production schema-freeze/migration review.
-7. WorkerRuntimeController start-failure hard-termination/escalation policy can be tightened before release candidate.
+This closes the known false-safe B5 path but does **not** close M2 acceptance. The current blocker is over-review caused by unresolved border-contact topology / complete border-band ownership. Strong matching inner-strip evidence and rounded-corner-localized contact must be classified without lowering the contact threshold or guessing destructively.
 
-## Next Work Packages
+## Platform Known Gaps / Remaining Work
+1. packaged/frozen Windows executable `spawn` behavior still needs distribution-gate smoke testing;
+2. diagnostic bundle can expand with artifact-commit journal/provider inventory;
+3. startup reconciliation may be tightened into a store-owned multi-record transaction;
+4. persistence schema requires production schema-freeze/migration review;
+5. worker start-failure hard-termination/escalation policy can be tightened before RC;
+6. release signing/installer/release automation remains a later distribution milestone.
 
-1. create a stacked M2/platform integration branch from this verified platform head;
-2. wire PR #9 `process_frame` + `FramePipelineConfig` + `export_png_atomic` into `M2FrameTaskExecutor` through injected seams, without copying image policy into the platform layer;
-3. add real-process successful M2 task integration: staged transparent frame → child executor → candidate → CandidateResultCoordinator → ADR-024 output commit;
-4. verify source/staged input immutability and final LINE asset properties in the integrated path;
-5. expand diagnostics and tighten startup recovery transaction;
-6. perform persistence schema-freeze review;
-7. add packaged-runtime spawn smoke during Windows distribution milestone.
+These gaps block production release readiness but do not invalidate the verified source-runtime M2 integration.
 
-## Separation from M2
+## Separation of Responsibilities
+- UI is a replaceable presentation shell and never owns critical business rules.
+- platform workers execute immutable commands and return candidates; they do not own image QA policy or final artifact authority.
+- M2/M3 image algorithms remain in the headless image/domain pipeline.
+- shared/final mutations remain MainBoard-owned.
+- `REVIEW > destructive guess` remains mandatory.
 
-This platform track remains intentionally separate from PR #9 so image-processing verification and control-plane infrastructure can be reviewed independently. Platform code defines the safe executor boundary and M2 descriptor/adapter contract; it does not reimplement or silently alter M2 image-processing decisions.
+## Immediate Next Work
+1. specify border-contact topology / complete border-band ownership from integrated Candidate A/B evidence;
+2. add regressions for rounded-corner-only contact, adjacent decorative-tone continuation and true artwork contact;
+3. preserve the current contact-risk threshold and fail closed unless ownership is proven;
+4. require Windows Ruff + pytest PASS;
+5. rerun the hash-matched Candidate A/B corpus read-only and inspect every automatic output;
+6. close M2 acceptance only after Tier-B behavior is actually accepted;
+7. begin M3 opaque-background implementation after M2 gate closure;
+8. later return to production schema freeze, packaged-runtime smoke and release hardening.
 
 ## References
-
 - `31_STATE_MACHINE_SPEC.md`
 - `46_PATH_AND_RESOURCE_MANAGER_ARCHITECTURE.md`
 - `47_MAINBOARD_INTERNAL_COMMUNICATION_ARCHITECTURE.md`
@@ -152,4 +166,9 @@ This platform track remains intentionally separate from PR #9 so image-processin
 - `61_WINDOWS_WORKER_PROCESS_AND_IPC_SPEC.md`
 - `62_TASK_EXECUTION_AND_RESULT_COMMIT_SPEC.md`
 - `63_IMMUTABLE_TASK_INPUT_AND_M2_EXECUTOR_MAPPING_SPEC.md`
-- ADR-017 through ADR-027
+- `64_JOINT_BORDER_METADATA_CLEANUP_SPEC.md`
+- `65_TIER_B_TRANSPARENT_CORPUS_EVIDENCE.md`
+- `66_TIER_B_METADATA_AND_EXTRACTION_REFINEMENT_SPEC.md`
+- `67_MULTITONE_BORDER_CONSENSUS_SPEC.md`
+- ADR-017 through ADR-028
+- PR #10, PR #11
