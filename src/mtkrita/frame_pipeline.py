@@ -76,6 +76,8 @@ def _border_evidence(detection: BorderDetection) -> dict[str, object]:
         "border_confidence": detection.confidence,
         "border_contact_risk": detection.contact_risk,
         "border_consensus_mode": detection.consensus_mode,
+        "border_requires_review": detection.requires_review,
+        "border_review_reason": detection.review_reason,
         "border_sides": sides,
     }
 
@@ -192,6 +194,26 @@ def process_frame(
     if cfg.remove_border:
         border = detect_border(working)
         evidence.update(_border_evidence(border))
+        if border.requires_review:
+            findings.append(
+                _finding(
+                    "BORDER.AMBIGUOUS",
+                    "Border-like evidence failed the automatic consensus safety contract",
+                    reason=border.review_reason,
+                )
+            )
+            return _early_review(
+                working,
+                index=index,
+                row=row,
+                column=column,
+                extraction_rect=extraction_rect,
+                extraction_method=extraction_method,
+                extraction_confidence=extraction_confidence,
+                findings=findings,
+                actions=actions,
+                evidence=evidence,
+            )
         if border.detected:
             if border.confidence < cfg.border_auto_threshold:
                 findings.append(
