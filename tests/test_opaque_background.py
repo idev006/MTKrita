@@ -42,8 +42,8 @@ def test_enclosed_black_text_like_detail_is_preserved() -> None:
 def test_disconnected_foreground_islands_are_preserved() -> None:
     image = _black_canvas()
     draw = ImageDraw.Draw(image)
-    draw.rectangle((20, 20, 35, 35), fill=(255, 0, 0))
-    draw.rectangle((65, 65, 80, 80), fill=(0, 180, 255))
+    draw.rectangle((20, 20, 45, 45), fill=(255, 0, 0))
+    draw.rectangle((55, 55, 80, 80), fill=(0, 180, 255))
 
     plan = plan_opaque_background_removal(image)
     output = apply_opaque_background_removal(image, plan)
