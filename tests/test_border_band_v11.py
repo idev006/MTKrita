@@ -138,9 +138,9 @@ def test_completed_boundary_reciprocal_corner_contact_is_explained() -> None:
     image = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
     _line(image, "top", 4)
     _line(image, "left", 4)
-    # Short same-color continuation exists only at the shared completed corner.
-    _line(image, "top", 5, start=0, end=4)
-    _line(image, "left", 5, start=0, end=4)
+    # Contact survives the completed-boundary trim but remains inside the 12 px corner envelope.
+    _line(image, "top", 5, start=6, end=10)
+    _line(image, "left", 5, start=6, end=10)
     detection = _detection(
         top=_side("top", risk=True),
         left=_side("left", risk=True),
