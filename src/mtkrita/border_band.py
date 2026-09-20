@@ -31,10 +31,18 @@ class BorderBandLayer:
 
 
 @dataclass(frozen=True)
+class CompletedBoundaryContact:
+    fraction: float
+    ranges: tuple[tuple[int, int], ...]
+    contact_risk: bool
+
+
+@dataclass(frozen=True)
 class BorderBandCompletionPlan:
     status: BorderBandCompletionStatus
     proposed_inner_offsets: dict[str, int]
     side_layers: dict[str, tuple[BorderBandLayer, ...]]
+    completed_inner_contact: dict[str, CompletedBoundaryContact]
     corroboration_pattern: str | None
     corroborating_sides: tuple[str, ...]
     reasons: tuple[str, ...]
@@ -103,9 +111,11 @@ def _matching_ranges(
     samples: list[tuple[int, int, int] | None],
     color: tuple[int, int, int],
     tolerance: int,
+    *,
+    origin: int = 0,
 ) -> tuple[tuple[int, int], ...]:
     indexes = [
-        index
+        origin + index
         for index, sample in enumerate(samples)
         if sample is not None and _distance(sample, color) <= tolerance
     ]
@@ -124,10 +134,6 @@ def _matching_ranges(
         previous = index
     ranges.append((start, previous + 1))
     return tuple(ranges)
-
-
-def _side_length(image: Image.Image, side: str) -> int:
-    return image.width if side in {"top", "bottom"} else image.height
 
 
 def _layer_candidate(
@@ -250,6 +256,48 @@ def _candidate_sides(detection: BorderDetection) -> dict[str, BorderSide]:
     }
 
 
+def _completed_contact(
+    image: Image.Image,
+    side: str,
+    offset: int,
+    color: tuple[int, int, int],
+    *,
+    tolerance: int,
+    threshold: float,
+) -> CompletedBoundaryContact:
+    samples = _strip(image, side, offset)
+    trim = min(offset, max(0, len(samples) // 4))
+    if trim and len(samples) > 2 * trim:
+        region = samples[trim:-trim]
+        origin = trim
+    else:
+        region = samples
+        origin = 0
+    ranges = _matching_ranges(region, color, tolerance, origin=origin)
+    matching_count = sum(end - start for start, end in ranges)
+    fraction = matching_count / len(region) if region else 0.0
+    return CompletedBoundaryContact(
+        fraction=fraction,
+        ranges=ranges,
+        contact_risk=fraction >= threshold,
+    )
+
+
+def _empty_plan(
+    status: BorderBandCompletionStatus,
+    reason: str,
+) -> BorderBandCompletionPlan:
+    return BorderBandCompletionPlan(
+        status=status,
+        proposed_inner_offsets={},
+        side_layers={},
+        completed_inner_contact={},
+        corroboration_pattern=None,
+        corroborating_sides=(),
+        reasons=(reason,),
+    )
+
+
 def plan_border_band_completion(
     image: Image.Image,
     detection: BorderDetection,
@@ -260,32 +308,27 @@ def plan_border_band_completion(
     min_color_purity: float = 0.90,
     min_longest_run_fraction: float = 0.20,
     max_depth_spread: int = 2,
+    contact_fraction_threshold: float = 0.05,
 ) -> BorderBandCompletionPlan:
     """Analyze decorative band continuation without mutating image or border authority."""
     if not 0 < max_fraction <= 0.5:
         raise ValueError("max_fraction must be in (0, 0.5]")
+    if not 0 <= contact_fraction_threshold <= 1:
+        raise ValueError("contact_fraction_threshold must be between 0 and 1")
     if detection.requires_review or detection.consensus_mode not in {
         "single_tone",
         "multi_tone_four_side",
     }:
-        return BorderBandCompletionPlan(
-            status=BorderBandCompletionStatus.REVIEW_INSUFFICIENT_CORROBORATION,
-            proposed_inner_offsets={},
-            side_layers={},
-            corroboration_pattern=None,
-            corroborating_sides=(),
-            reasons=("border consensus is not eligible for Class-B completion",),
+        return _empty_plan(
+            BorderBandCompletionStatus.REVIEW_INSUFFICIENT_CORROBORATION,
+            "border consensus is not eligible for Class-B completion",
         )
 
     risky = _candidate_sides(detection)
     if not risky:
-        return BorderBandCompletionPlan(
-            status=BorderBandCompletionStatus.NOT_NEEDED,
-            proposed_inner_offsets={},
-            side_layers={},
-            corroboration_pattern=None,
-            corroborating_sides=(),
-            reasons=("no residual border contact requires Class-B analysis",),
+        return _empty_plan(
+            BorderBandCompletionStatus.NOT_NEEDED,
+            "no residual border contact requires Class-B analysis",
         )
 
     max_search = max(1, int(min(image.size) * max_fraction))
@@ -308,13 +351,9 @@ def plan_border_band_completion(
     }
 
     if not side_layers:
-        return BorderBandCompletionPlan(
-            status=BorderBandCompletionStatus.REVIEW_INSUFFICIENT_CORROBORATION,
-            proposed_inner_offsets={},
-            side_layers={},
-            corroboration_pattern=None,
-            corroborating_sides=(),
-            reasons=("no bounded side-parallel decorative continuation was proven",),
+        return _empty_plan(
+            BorderBandCompletionStatus.REVIEW_INSUFFICIENT_CORROBORATION,
+            "no bounded side-parallel decorative continuation was proven",
         )
 
     names = tuple(side_layers)
@@ -334,12 +373,18 @@ def plan_border_band_completion(
             ):
                 corroborating.update((first_name, second_name))
 
-    four_side = len(side_layers) == 4
-    if four_side:
+    if len(side_layers) == 4:
         deepest = [max(candidate.relative_depth for candidate in collected[name]) for name in names]
-        four_side = max(deepest) - min(deepest) <= max_depth_spread
-
-    if four_side:
+        if max(deepest) - min(deepest) > max_depth_spread:
+            return BorderBandCompletionPlan(
+                status=BorderBandCompletionStatus.REVIEW_GEOMETRY_CONFLICT,
+                proposed_inner_offsets={},
+                side_layers=side_layers,
+                completed_inner_contact={},
+                corroboration_pattern=None,
+                corroborating_sides=(),
+                reasons=("four-side proposed band depth is geometrically incoherent",),
+            )
         pattern = "four_side_ring"
         corroborating = set(names)
     elif len(corroborating) >= 2:
@@ -349,6 +394,7 @@ def plan_border_band_completion(
             status=BorderBandCompletionStatus.REVIEW_INSUFFICIENT_CORROBORATION,
             proposed_inner_offsets={},
             side_layers=side_layers,
+            completed_inner_contact={},
             corroboration_pattern=None,
             corroborating_sides=(),
             reasons=("long side continuation lacks adjacent-side structural corroboration",),
@@ -359,24 +405,45 @@ def plan_border_band_completion(
         for name, layers in side_layers.items()
         if name in corroborating
     }
-    if any(offset > max_search for offset in proposed.values()):
+    if any(offset >= max_search for offset in proposed.values()):
         return BorderBandCompletionPlan(
             status=BorderBandCompletionStatus.REVIEW_SEARCH_BOUNDARY,
             proposed_inner_offsets=proposed,
             side_layers=side_layers,
+            completed_inner_contact={},
             corroboration_pattern=pattern,
             corroborating_sides=tuple(sorted(corroborating)),
-            reasons=("proposed completion exceeds the existing bounded search domain",),
+            reasons=("proposed completion reaches the bounded search-domain limit",),
+        )
+
+    completed: dict[str, CompletedBoundaryContact] = {}
+    for name, offset in proposed.items():
+        last_layer = side_layers[name][-1]
+        completed[name] = _completed_contact(
+            image,
+            name,
+            offset,
+            last_layer.color,
+            tolerance=max(32, color_tolerance),
+            threshold=contact_fraction_threshold,
+        )
+    if any(contact.contact_risk for contact in completed.values()):
+        return BorderBandCompletionPlan(
+            status=BorderBandCompletionStatus.REVIEW_ARTWORK_CONTACT,
+            proposed_inner_offsets=proposed,
+            side_layers=side_layers,
+            completed_inner_contact=completed,
+            corroboration_pattern=pattern,
+            corroborating_sides=tuple(sorted(corroborating)),
+            reasons=("completed inner boundary retains unexplained contact",),
         )
 
     return BorderBandCompletionPlan(
         status=BorderBandCompletionStatus.SAFE_COMPLETE,
         proposed_inner_offsets=proposed,
         side_layers=side_layers,
+        completed_inner_contact=completed,
         corroboration_pattern=pattern,
         corroborating_sides=tuple(sorted(corroborating)),
-        reasons=(
-            "planner-only structural completion candidate; downstream completed-boundary "
-            "contact validation is still required before cleanup authority",
-        ),
+        reasons=("completed band is structurally corroborated and its inner boundary is clean",),
     )
