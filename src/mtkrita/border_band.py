@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from PIL import Image
@@ -32,14 +32,19 @@ class BorderBandLayer:
 
 @dataclass(frozen=True)
 class CompletedBoundaryContact:
+    raw_fraction: float
+    raw_ranges: tuple[tuple[int, int], ...]
+    explained_corner_ranges: tuple[tuple[int, int], ...]
     fraction: float
     ranges: tuple[tuple[int, int], ...]
     contact_risk: bool
+    sample_count: int
 
 
 @dataclass(frozen=True)
 class BorderBandCompletionPlan:
     status: BorderBandCompletionStatus
+    trigger_sides: tuple[str, ...]
     proposed_inner_offsets: dict[str, int]
     side_layers: dict[str, tuple[BorderBandLayer, ...]]
     completed_inner_contact: dict[str, CompletedBoundaryContact]
@@ -248,11 +253,19 @@ def _adjacent_pair_corroborates(
     )
 
 
-def _candidate_sides(detection: BorderDetection) -> dict[str, BorderSide]:
+def _authorized_sides(detection: BorderDetection) -> dict[str, BorderSide]:
     return {
         name: side
         for name in ("left", "top", "right", "bottom")
-        if (side := getattr(detection, name)) is not None and side.contact_risk
+        if (side := getattr(detection, name)) is not None
+    }
+
+
+def _trigger_sides(detection: BorderDetection) -> dict[str, BorderSide]:
+    return {
+        name: side
+        for name, side in _authorized_sides(detection).items()
+        if side.contact_risk
     }
 
 
@@ -273,22 +286,101 @@ def _completed_contact(
     else:
         region = samples
         origin = 0
-    ranges = _matching_ranges(region, color, tolerance, origin=origin)
-    matching_count = sum(end - start for start, end in ranges)
-    fraction = matching_count / len(region) if region else 0.0
+    raw_ranges = _matching_ranges(region, color, tolerance, origin=origin)
+    raw_match_count = sum(end - start for start, end in raw_ranges)
+    sample_count = len(region)
+    raw_fraction = raw_match_count / sample_count if sample_count else 0.0
     return CompletedBoundaryContact(
-        fraction=fraction,
-        ranges=ranges,
-        contact_risk=fraction >= threshold,
+        raw_fraction=raw_fraction,
+        raw_ranges=raw_ranges,
+        explained_corner_ranges=(),
+        fraction=raw_fraction,
+        ranges=raw_ranges,
+        contact_risk=raw_fraction >= threshold,
+        sample_count=sample_count,
     )
+
+
+def _endpoint_ranges(
+    ranges: tuple[tuple[int, int], ...],
+    *,
+    side_length: int,
+    max_search: int,
+    endpoint: str,
+) -> tuple[tuple[int, int], ...]:
+    if endpoint == "low":
+        return tuple(interval for interval in ranges if interval[1] <= max_search)
+    boundary = max(0, side_length - max_search)
+    return tuple(interval for interval in ranges if interval[0] >= boundary)
+
+
+def _resolve_completed_corner_contact(
+    image: Image.Image,
+    completed: dict[str, CompletedBoundaryContact],
+    *,
+    max_search: int,
+    threshold: float,
+) -> dict[str, CompletedBoundaryContact]:
+    explained: dict[str, set[tuple[int, int]]] = {name: set() for name in completed}
+    corners = (
+        ("top", "low", "left", "low"),
+        ("top", "high", "right", "low"),
+        ("bottom", "low", "left", "high"),
+        ("bottom", "high", "right", "high"),
+    )
+    for first_name, first_endpoint, second_name, second_endpoint in corners:
+        first = completed.get(first_name)
+        second = completed.get(second_name)
+        if first is None or second is None:
+            continue
+        first_length = image.width if first_name in {"top", "bottom"} else image.height
+        second_length = image.width if second_name in {"top", "bottom"} else image.height
+        first_ranges = _endpoint_ranges(
+            first.raw_ranges,
+            side_length=first_length,
+            max_search=max_search,
+            endpoint=first_endpoint,
+        )
+        second_ranges = _endpoint_ranges(
+            second.raw_ranges,
+            side_length=second_length,
+            max_search=max_search,
+            endpoint=second_endpoint,
+        )
+        if not first_ranges or not second_ranges:
+            continue
+        explained[first_name].update(first_ranges)
+        explained[second_name].update(second_ranges)
+
+    resolved: dict[str, CompletedBoundaryContact] = {}
+    for name, contact in completed.items():
+        explained_ranges = tuple(
+            interval for interval in contact.raw_ranges if interval in explained[name]
+        )
+        residual_ranges = tuple(
+            interval for interval in contact.raw_ranges if interval not in explained[name]
+        )
+        residual_count = sum(end - start for start, end in residual_ranges)
+        fraction = residual_count / contact.sample_count if contact.sample_count else 0.0
+        resolved[name] = replace(
+            contact,
+            explained_corner_ranges=explained_ranges,
+            fraction=fraction,
+            ranges=residual_ranges,
+            contact_risk=fraction >= threshold,
+        )
+    return resolved
 
 
 def _empty_plan(
     status: BorderBandCompletionStatus,
     reason: str,
+    *,
+    trigger_sides: tuple[str, ...] = (),
 ) -> BorderBandCompletionPlan:
     return BorderBandCompletionPlan(
         status=status,
+        trigger_sides=trigger_sides,
         proposed_inner_offsets={},
         side_layers={},
         completed_inner_contact={},
@@ -324,13 +416,15 @@ def plan_border_band_completion(
             "border consensus is not eligible for Class-B completion",
         )
 
-    risky = _candidate_sides(detection)
-    if not risky:
+    triggers = _trigger_sides(detection)
+    trigger_names = tuple(sorted(triggers))
+    if not triggers:
         return _empty_plan(
             BorderBandCompletionStatus.NOT_NEEDED,
             "no residual border contact requires Class-B analysis",
         )
 
+    authorized = _authorized_sides(detection)
     max_search = max(1, int(min(image.size) * max_fraction))
     collected = {
         name: _collect_candidates(
@@ -342,7 +436,7 @@ def plan_border_band_completion(
             min_color_purity=min_color_purity,
             min_longest_run_fraction=min_longest_run_fraction,
         )
-        for name, side in risky.items()
+        for name, side in authorized.items()
     }
     side_layers = {
         name: tuple(candidate.layer for candidate in candidates)
@@ -354,6 +448,7 @@ def plan_border_band_completion(
         return _empty_plan(
             BorderBandCompletionStatus.REVIEW_INSUFFICIENT_CORROBORATION,
             "no bounded side-parallel decorative continuation was proven",
+            trigger_sides=trigger_names,
         )
 
     names = tuple(side_layers)
@@ -361,6 +456,8 @@ def plan_border_band_completion(
     for index, first_name in enumerate(names):
         first_candidates = collected[first_name]
         for second_name in names[index + 1 :]:
+            if first_name not in triggers and second_name not in triggers:
+                continue
             second_candidates = collected[second_name]
             if any(
                 _adjacent_pair_corroborates(
@@ -378,6 +475,7 @@ def plan_border_band_completion(
         if max(deepest) - min(deepest) > max_depth_spread:
             return BorderBandCompletionPlan(
                 status=BorderBandCompletionStatus.REVIEW_GEOMETRY_CONFLICT,
+                trigger_sides=trigger_names,
                 proposed_inner_offsets={},
                 side_layers=side_layers,
                 completed_inner_contact={},
@@ -392,6 +490,7 @@ def plan_border_band_completion(
     else:
         return BorderBandCompletionPlan(
             status=BorderBandCompletionStatus.REVIEW_INSUFFICIENT_CORROBORATION,
+            trigger_sides=trigger_names,
             proposed_inner_offsets={},
             side_layers=side_layers,
             completed_inner_contact={},
@@ -408,6 +507,7 @@ def plan_border_band_completion(
     if any(offset >= max_search for offset in proposed.values()):
         return BorderBandCompletionPlan(
             status=BorderBandCompletionStatus.REVIEW_SEARCH_BOUNDARY,
+            trigger_sides=trigger_names,
             proposed_inner_offsets=proposed,
             side_layers=side_layers,
             completed_inner_contact={},
@@ -427,9 +527,16 @@ def plan_border_band_completion(
             tolerance=max(32, color_tolerance),
             threshold=contact_fraction_threshold,
         )
+    completed = _resolve_completed_corner_contact(
+        image,
+        completed,
+        max_search=max_search,
+        threshold=contact_fraction_threshold,
+    )
     if any(contact.contact_risk for contact in completed.values()):
         return BorderBandCompletionPlan(
             status=BorderBandCompletionStatus.REVIEW_ARTWORK_CONTACT,
+            trigger_sides=trigger_names,
             proposed_inner_offsets=proposed,
             side_layers=side_layers,
             completed_inner_contact=completed,
@@ -440,6 +547,7 @@ def plan_border_band_completion(
 
     return BorderBandCompletionPlan(
         status=BorderBandCompletionStatus.SAFE_COMPLETE,
+        trigger_sides=trigger_names,
         proposed_inner_offsets=proposed,
         side_layers=side_layers,
         completed_inner_contact=completed,
